@@ -439,10 +439,13 @@ async def delete_document(doc_id: str, user=Depends(require_admin)):
 
 
 @api_router.put("/documents/{doc_id}/status")
-async def update_document_status(doc_id: str, body: DocumentStatusUpdate, user=Depends(require_admin)):
+async def update_document_status(doc_id: str, body: DocumentStatusUpdate, background_tasks: BackgroundTasks, user=Depends(require_admin)):
     if body.status not in ["pending_review", "reviewed"]:
         raise HTTPException(status_code=400, detail="Estado invalido")
     try:
+        doc = await db.documents.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
+        if not doc:
+            raise HTTPException(status_code=404, detail="Documento no encontrado")
         result = await db.documents.update_one(
             {"_id": ObjectId(doc_id), "is_deleted": False},
             {"$set": {"status": body.status}}
@@ -453,6 +456,22 @@ async def update_document_status(doc_id: str, body: DocumentStatusUpdate, user=D
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     await log_audit("document_status_changed", user["_id"], user.get("name", ""),
                     {"doc_id": doc_id, "new_status": body.status})
+
+    # Send email to client when status changes to reviewed
+    if body.status == "reviewed" and doc.get("user_id"):
+        try:
+            client = await db.users.find_one({"_id": ObjectId(doc["user_id"])})
+            if client and client.get("email"):
+                background_tasks.add_task(
+                    send_status_notification,
+                    client.get("email", ""),
+                    client.get("name", "Cliente"),
+                    doc.get("display_name", doc.get("original_filename", "")),
+                    "reviewed"
+                )
+        except Exception:
+            pass
+
     return {"message": "Estado actualizado", "status": body.status}
 
 
@@ -916,6 +935,54 @@ def send_client_notification(client_email: str, client_name: str, filename: str,
         logger.info(f"Notificacion enviada al cliente {client_name} ({client_email})")
     except Exception as e:
         logger.error(f"Error enviando notificacion al cliente: {e}")
+
+
+# --- Status change notification to client ---
+def send_status_notification(client_email: str, client_name: str, filename: str, new_status: str):
+    try:
+        import pymongo
+        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
+        sync_db = sync_client[os.environ['DB_NAME']]
+        settings = sync_db.settings.find_one({"type": "smtp"})
+        sync_client.close()
+
+        if not settings or not settings.get("smtp_host"):
+            logger.info("SMTP no configurado, notificacion de estado omitida")
+            return
+
+        if not client_email:
+            logger.info("Cliente sin email, notificacion de estado omitida")
+            return
+
+        status_label = "Revisado" if new_status == "reviewed" else "Pendiente de revision"
+
+        msg = MIMEMultipart()
+        msg["From"] = settings["from_email"]
+        msg["To"] = client_email
+        msg["Subject"] = f"Tramilex - Tu documento ha sido revisado"
+
+        body = f"""
+        <h2>Documento revisado</h2>
+        <p>Hola <strong>{client_name}</strong>,</p>
+        <p>Tu abogado ha cambiado el estado de tu documento:</p>
+        <p><strong>Archivo:</strong> {filename}</p>
+        <p><strong>Nuevo estado:</strong> {status_label}</p>
+        <p><strong>Fecha:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}</p>
+        <br>
+        <p>Ingresa a tu cuenta de Tramilex para mas detalles.</p>
+        <br>
+        <p>Saludos,<br>Equipo Tramilex</p>
+        """
+        msg.attach(MIMEText(body, "html"))
+
+        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
+        server.starttls()
+        server.login(settings["smtp_user"], settings["smtp_password"])
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"Notificacion de estado enviada a {client_name} ({client_email})")
+    except Exception as e:
+        logger.error(f"Error enviando notificacion de estado: {e}")
 
 
 # --- Startup ---
