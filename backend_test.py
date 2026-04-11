@@ -84,17 +84,32 @@ class TramiLexAPITester:
             return False, {}
 
     def test_admin_login(self):
-        """Test admin login"""
+        """Test main admin login"""
         success, response = self.run_test(
-            "Admin Login",
+            "Main Admin Login (malcsfuz@tramilex.es)",
             "POST",
             "auth/login",
             200,
-            data={"email": "admin@tramilex.com", "password": "Admin123!"}
+            data={"email": "malcsfuz@tramilex.es", "password": "Admin123!"}
         )
         if success and 'token' in response:
             self.admin_token = response['token']
-            self.log(f"   Admin token obtained: {self.admin_token[:20]}...")
+            self.log(f"   Main admin token obtained: {self.admin_token[:20]}...")
+            return True
+        return False
+
+    def test_support_admin_login(self):
+        """Test support admin login"""
+        success, response = self.run_test(
+            "Support Admin Login (soporte@goroky.com)",
+            "POST",
+            "auth/login",
+            200,
+            data={"email": "soporte@goroky.com", "password": "Ed$2526759"}
+        )
+        if success and 'token' in response:
+            self.support_admin_token = response['token']
+            self.log(f"   Support admin token obtained: {self.support_admin_token[:20]}...")
             return True
         return False
 

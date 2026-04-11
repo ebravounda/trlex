@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
-import { Settings, Save, Mail, Server, Lock, User } from 'lucide-react';
+import { Settings, Save, Mail, Server, Lock, User, KeyRound } from 'lucide-react';
 
 export default function AdminSettings() {
   const [form, setForm] = useState({
@@ -16,6 +16,10 @@ export default function AdminSettings() {
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+
+  // Password change state
+  const [pwForm, setPwForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
+  const [changingPw, setChangingPw] = useState(false);
 
   const fetchSettings = useCallback(async () => {
     try {
@@ -56,6 +60,35 @@ export default function AdminSettings() {
   };
 
   const update = (field, value) => setForm(prev => ({ ...prev, [field]: value }));
+
+  const handlePasswordChange = async (e) => {
+    e.preventDefault();
+    if (!pwForm.current_password || !pwForm.new_password) {
+      toast.error('Todos los campos son obligatorios');
+      return;
+    }
+    if (pwForm.new_password.length < 6) {
+      toast.error('La nueva contrasena debe tener al menos 6 caracteres');
+      return;
+    }
+    if (pwForm.new_password !== pwForm.confirm_password) {
+      toast.error('Las contrasenas no coinciden');
+      return;
+    }
+    setChangingPw(true);
+    try {
+      await api.put('/auth/change-password', {
+        current_password: pwForm.current_password,
+        new_password: pwForm.new_password
+      });
+      toast.success('Contrasena actualizada correctamente');
+      setPwForm({ current_password: '', new_password: '', confirm_password: '' });
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error cambiando contrasena');
+    } finally {
+      setChangingPw(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -181,6 +214,77 @@ export default function AdminSettings() {
             >
               <Save className="w-4 h-4" />
               {saving ? 'Guardando...' : 'Guardar configuracion'}
+            </Button>
+          </div>
+        </form>
+      </div>
+
+      {/* Password Change */}
+      <div className="bg-white border border-slate-200 rounded-lg shadow-sm max-w-2xl mt-8">
+        <div className="p-6 border-b border-slate-200">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
+              <KeyRound className="w-5 h-5 text-slate-600" strokeWidth={1.5} />
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                Cambiar contrasena
+              </h2>
+              <p className="text-xs text-slate-500">
+                Actualiza tu contrasena de acceso al sistema
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <form onSubmit={handlePasswordChange} className="p-6 space-y-5">
+          <div>
+            <Label className="text-slate-700 text-sm font-medium">Contrasena actual *</Label>
+            <Input
+              type="password"
+              value={pwForm.current_password}
+              onChange={e => setPwForm(prev => ({ ...prev, current_password: e.target.value }))}
+              placeholder="Tu contrasena actual"
+              className="mt-1.5 h-10 bg-white border-slate-300"
+              data-testid="current-password-input"
+              required
+            />
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div>
+              <Label className="text-slate-700 text-sm font-medium">Nueva contrasena *</Label>
+              <Input
+                type="password"
+                value={pwForm.new_password}
+                onChange={e => setPwForm(prev => ({ ...prev, new_password: e.target.value }))}
+                placeholder="Min. 6 caracteres"
+                className="mt-1.5 h-10 bg-white border-slate-300"
+                data-testid="new-password-input"
+                required
+              />
+            </div>
+            <div>
+              <Label className="text-slate-700 text-sm font-medium">Confirmar contrasena *</Label>
+              <Input
+                type="password"
+                value={pwForm.confirm_password}
+                onChange={e => setPwForm(prev => ({ ...prev, confirm_password: e.target.value }))}
+                placeholder="Repetir nueva contrasena"
+                className="mt-1.5 h-10 bg-white border-slate-300"
+                data-testid="confirm-password-input"
+                required
+              />
+            </div>
+          </div>
+          <div className="pt-2">
+            <Button
+              type="submit"
+              className="h-10 bg-slate-900 hover:bg-slate-800 text-white rounded-md font-medium gap-2"
+              disabled={changingPw}
+              data-testid="change-password-btn"
+            >
+              <KeyRound className="w-4 h-4" />
+              {changingPw ? 'Cambiando...' : 'Cambiar contrasena'}
             </Button>
           </div>
         </form>
