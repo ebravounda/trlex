@@ -37,14 +37,21 @@ Sistema para abogado de inmigracion donde clientes con pasaporte y NIE pueden re
 - SMTP settings configuration
 - Background email notifications on document upload
 
+### Phase 2 (Feb 2026)
+- Document categories (identificacion, residencia, trabajo, resolucion, contrato, fiscal, otros)
+- Bulk download of all client documents as ZIP
+- Audit log tracking all system actions (uploads, deletes, status changes, SMTP updates)
+- Admin can upload documents to client profiles (resoluciones, etc.)
+- Client receives email notification when admin uploads a document
+- uploaded_by tracking (client vs admin) shown in document tables
+
 ## P0 (Remaining)
-- None - MVP complete
+- None - MVP + Phase 2 complete
 
 ## P1 (Nice to have)
-- Bulk document download per client
-- Document categories/types
-- Audit log for admin actions
-- Dashboard analytics
+- Document expiry/reminder system
+- Dashboard analytics for admin
+- Multiple admin users support
 
 ## P2 (Future)
 - Multi-language support
