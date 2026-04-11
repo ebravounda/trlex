@@ -296,10 +296,14 @@ async def upload_document(
 ):
     allowed_types = [
         "application/pdf", "image/jpeg", "image/png",
-        "image/gif", "image/webp", "image/jpg"
+        "image/gif", "image/webp", "image/jpg",
+        "image/heic", "image/heif", "application/octet-stream"
     ]
     content_type = file.content_type or "application/octet-stream"
-    if content_type not in allowed_types:
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
+    allowed_extensions = ["pdf", "jpg", "jpeg", "png", "gif", "webp", "heic", "heif"]
+
+    if content_type not in allowed_types and ext not in allowed_extensions:
         raise HTTPException(status_code=400, detail="Tipo de archivo no permitido. Solo PDF e imagenes.")
 
     data = await file.read()
@@ -703,10 +707,14 @@ async def admin_upload_to_client(
 
     allowed_types = [
         "application/pdf", "image/jpeg", "image/png",
-        "image/gif", "image/webp", "image/jpg"
+        "image/gif", "image/webp", "image/jpg",
+        "image/heic", "image/heif", "application/octet-stream"
     ]
     content_type = file.content_type or "application/octet-stream"
-    if content_type not in allowed_types:
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
+    allowed_extensions = ["pdf", "jpg", "jpeg", "png", "gif", "webp", "heic", "heif"]
+
+    if content_type not in allowed_types and ext not in allowed_extensions:
         raise HTTPException(status_code=400, detail="Tipo de archivo no permitido. Solo PDF e imagenes.")
 
     data = await file.read()

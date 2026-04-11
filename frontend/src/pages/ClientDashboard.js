@@ -189,7 +189,7 @@ export default function ClientDashboard() {
             ref={fileInputRef}
             type="file"
             multiple
-            accept=".pdf,.jpg,.jpeg,.png,.gif,.webp"
+            accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,image/*,application/pdf"
             className="hidden"
             onChange={(e) => handleUpload(Array.from(e.target.files))}
             data-testid="file-input"
