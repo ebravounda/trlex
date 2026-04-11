@@ -12,7 +12,8 @@ export default function AdminSettings() {
     smtp_port: 587,
     smtp_user: '',
     smtp_password: '',
-    from_email: ''
+    from_email: '',
+    notify_email: ''
   });
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -29,7 +30,8 @@ export default function AdminSettings() {
         smtp_port: res.data.smtp_port || 587,
         smtp_user: res.data.smtp_user || '',
         smtp_password: res.data.smtp_password || '',
-        from_email: res.data.from_email || ''
+        from_email: res.data.from_email || '',
+        notify_email: res.data.notify_email || ''
       });
     } catch (err) {
       toast.error('Error cargando configuracion');
@@ -44,8 +46,8 @@ export default function AdminSettings() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (!form.smtp_host || !form.smtp_user || !form.from_email) {
-      toast.error('Host, usuario y email remitente son obligatorios');
+    if (!form.smtp_host || !form.smtp_user || !form.from_email || !form.notify_email) {
+      toast.error('Host, usuario, email remitente y email de notificaciones son obligatorios');
       return;
     }
     setSaving(true);
@@ -189,7 +191,7 @@ export default function AdminSettings() {
           <div>
             <Label className="text-slate-700 text-sm font-medium flex items-center gap-2">
               <Mail className="w-3.5 h-3.5 text-slate-400" />
-              Email remitente *
+              Email remitente (quien envia) *
             </Label>
             <Input
               type="email"
@@ -201,7 +203,26 @@ export default function AdminSettings() {
               required
             />
             <p className="text-xs text-slate-400 mt-1.5">
-              Las notificaciones se enviaran a este email cuando un cliente suba documentos
+              Email del servidor SMTP que envia los correos
+            </p>
+          </div>
+
+          <div>
+            <Label className="text-slate-700 text-sm font-medium flex items-center gap-2">
+              <Mail className="w-3.5 h-3.5 text-slate-400" />
+              Email del abogado (quien recibe) *
+            </Label>
+            <Input
+              type="email"
+              value={form.notify_email}
+              onChange={e => update('notify_email', e.target.value)}
+              placeholder="malcafuz@tramilex.es"
+              className="mt-1.5 h-10 bg-white border-slate-300"
+              data-testid="smtp-notify-email-input"
+              required
+            />
+            <p className="text-xs text-slate-400 mt-1.5">
+              Aqui recibiras las notificaciones cuando un cliente suba documentos
             </p>
           </div>
 

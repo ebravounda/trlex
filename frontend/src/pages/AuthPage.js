@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
 
 const LOGO_URL = "https://tramilex.es/wp-content/uploads/2024/07/logo-tramilex-v3-1.jpg";
 const BG_URL = "https://images.unsplash.com/photo-1567030561392-0e0691af044b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBjb3Jwb3JhdGUlMjBvZmZpY2UlMjBidWlsZGluZyUyMG1pbmltYWwlMjBsaWdodHxlbnwwfHx8fDE3NzU5Mjg0NzB8MA&ixlib=rb-4.1.0&q=85";
@@ -42,7 +42,8 @@ export default function AuthPage() {
   // Register state
   const [regForm, setRegForm] = useState({
     name: '', email: '', password: '', nie: '', passport_number: '',
-    phone: '', address: '', city: '', origin_country: '', residence_country: ''
+    phone: '', address: '', city: '', origin_country: '', residence_country: '',
+    father_name: '', mother_name: '', children: []
   });
 
   const handleLogin = async (e) => {
@@ -287,6 +288,80 @@ export default function AuthPage() {
                         ))}
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+
+                {/* Datos familiares */}
+                <div className="pt-2 border-t border-slate-200">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Datos familiares</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-slate-700 text-sm font-medium">Nombre completo del padre</Label>
+                    <Input
+                      value={regForm.father_name}
+                      onChange={e => updateReg('father_name', e.target.value)}
+                      placeholder="Nombre del padre"
+                      className="mt-1.5 h-10 bg-white border-slate-300"
+                      data-testid="register-father-input"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-slate-700 text-sm font-medium">Nombre completo de la madre</Label>
+                    <Input
+                      value={regForm.mother_name}
+                      onChange={e => updateReg('mother_name', e.target.value)}
+                      placeholder="Nombre de la madre"
+                      className="mt-1.5 h-10 bg-white border-slate-300"
+                      data-testid="register-mother-input"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <Label className="text-slate-700 text-sm font-medium">Hijos (opcional)</Label>
+                    <button
+                      type="button"
+                      onClick={() => updateReg('children', [...regForm.children, ''])}
+                      className="flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 font-medium"
+                      data-testid="add-child-btn"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      Agregar hijo
+                    </button>
+                  </div>
+                  {regForm.children.length === 0 && (
+                    <p className="text-xs text-slate-400">Sin hijos registrados. Pulsa "+ Agregar hijo" si deseas agregar.</p>
+                  )}
+                  <div className="space-y-2">
+                    {regForm.children.map((child, idx) => (
+                      <div key={idx} className="flex items-center gap-2">
+                        <Input
+                          value={child}
+                          onChange={e => {
+                            const updated = [...regForm.children];
+                            updated[idx] = e.target.value;
+                            updateReg('children', updated);
+                          }}
+                          placeholder={`Nombre completo del hijo/a ${idx + 1}`}
+                          className="h-10 bg-white border-slate-300 flex-1"
+                          data-testid={`register-child-${idx}-input`}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const updated = regForm.children.filter((_, i) => i !== idx);
+                            updateReg('children', updated);
+                          }}
+                          className="text-red-400 hover:text-red-600 p-1"
+                          data-testid={`remove-child-${idx}-btn`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ))}
                   </div>
                 </div>
 

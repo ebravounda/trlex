@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Download, Trash2, MoreHorizontal, CheckCircle, Clock,
   Mail, Phone, MapPin, Globe, FileText, Image as ImageIcon, User,
-  Upload, Package, Tag, Eye, X, Pencil
+  Upload, Package, Tag, Eye, X, Pencil, FileDown, Users
 } from 'lucide-react';
 
 const CATEGORY_LABELS = {
@@ -147,6 +147,20 @@ export default function AdminClientDetail() {
     }
   };
 
+  const handleDownloadFicha = async () => {
+    try {
+      const res = await api.get(`/clients/${clientId}/ficha`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Ficha_Tramilex_${(client?.name || 'cliente').replace(/\s/g, '_')}.pdf`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast.error('Error generando ficha');
+    }
+  };
+
   const handlePreview = async (doc) => {
     try {
       const res = await api.get(`/documents/${doc.id}/preview`, { responseType: 'blob' });
@@ -256,6 +270,18 @@ export default function AdminClientDetail() {
               Registrado el {formatDate(client.created_at)}
             </p>
           </div>
+          <div className="ml-auto">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 text-slate-600"
+              onClick={handleDownloadFicha}
+              data-testid="download-ficha-btn"
+            >
+              <FileDown className="w-4 h-4" />
+              Descargar Ficha PDF
+            </Button>
+          </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -268,6 +294,23 @@ export default function AdminClientDetail() {
           <InfoItem icon={Globe} label="Pais de origen" value={client.origin_country} />
           <InfoItem icon={Globe} label="Pais de residencia" value={client.residence_country} />
         </div>
+
+        {/* Family Info */}
+        {(client.father_name || client.mother_name || (client.children && client.children.length > 0)) && (
+          <div className="mt-6 pt-6 border-t border-slate-200">
+            <div className="flex items-center gap-2 mb-4">
+              <Users className="w-4 h-4 text-slate-500" strokeWidth={1.5} />
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Datos Familiares</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <InfoItem icon={User} label="Nombre del padre" value={client.father_name} />
+              <InfoItem icon={User} label="Nombre de la madre" value={client.mother_name} />
+              {client.children && client.children.map((child, idx) => (
+                child && <InfoItem key={idx} icon={User} label={`Hijo/a ${idx + 1}`} value={child} />
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Admin Upload + Documents */}

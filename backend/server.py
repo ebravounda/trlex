@@ -17,7 +17,7 @@ import jwt
 import requests as http_requests
 from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 import smtplib
 import zipfile
 import io
@@ -169,6 +169,9 @@ class RegisterInput(BaseModel):
     city: str = ""
     origin_country: str = ""
     residence_country: str = ""
+    father_name: str = ""
+    mother_name: str = ""
+    children: List[str] = []
 
 
 class SMTPSettingsInput(BaseModel):
@@ -177,6 +180,7 @@ class SMTPSettingsInput(BaseModel):
     smtp_user: str
     smtp_password: str
     from_email: str
+    notify_email: str
 
 
 class DocumentStatusUpdate(BaseModel):
@@ -214,6 +218,9 @@ async def register(input_data: RegisterInput):
         "city": input_data.city,
         "origin_country": input_data.origin_country,
         "residence_country": input_data.residence_country,
+        "father_name": input_data.father_name,
+        "mother_name": input_data.mother_name,
+        "children": input_data.children,
         "role": "client",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -543,6 +550,109 @@ async def get_client_detail(client_id: str, user=Depends(require_admin)):
     return client
 
 
+@api_router.get("/clients/{client_id}/ficha")
+async def generate_ficha_pdf(client_id: str, user=Depends(require_admin)):
+    try:
+        client = await db.users.find_one(
+            {"_id": ObjectId(client_id), "role": "client"},
+            {"password_hash": 0}
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    from fpdf import FPDF
+
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=20)
+
+    # Header
+    pdf.set_font("Helvetica", "B", 20)
+    pdf.cell(0, 12, "FICHA INTERNA TRAMILEX", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(120, 120, 120)
+    pdf.cell(0, 6, f"Generada el {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}", ln=True, align="C")
+    pdf.ln(5)
+
+    # Line separator
+    pdf.set_draw_color(200, 200, 200)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(8)
+
+    def add_section(title):
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(0, 10, title, ln=True)
+        pdf.set_draw_color(2, 132, 199)
+        pdf.line(10, pdf.get_y(), 60, pdf.get_y())
+        pdf.ln(4)
+
+    def add_field(label, value):
+        if not value:
+            return
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(71, 85, 105)
+        pdf.cell(55, 7, f"{label}:")
+        pdf.set_font("Helvetica", "", 10)
+        pdf.set_text_color(15, 23, 42)
+        pdf.cell(0, 7, str(value), ln=True)
+
+    # Datos personales
+    add_section("Datos Personales")
+    add_field("Nombre completo", client.get("name", ""))
+    add_field("Email", client.get("email", ""))
+    add_field("Telefono", client.get("phone", ""))
+    add_field("NIE", client.get("nie", ""))
+    add_field("Pasaporte", client.get("passport_number", ""))
+    pdf.ln(4)
+
+    # Direccion
+    add_section("Direccion")
+    add_field("Direccion", client.get("address", ""))
+    add_field("Ciudad", client.get("city", ""))
+    add_field("Pais de origen", client.get("origin_country", ""))
+    add_field("Pais de residencia", client.get("residence_country", ""))
+    pdf.ln(4)
+
+    # Familia
+    add_section("Datos Familiares")
+    add_field("Nombre del padre", client.get("father_name", ""))
+    add_field("Nombre de la madre", client.get("mother_name", ""))
+
+    children = client.get("children", [])
+    if children:
+        for i, child in enumerate(children, 1):
+            if child:
+                add_field(f"Hijo/a {i}", child)
+    pdf.ln(4)
+
+    # Registro
+    add_section("Informacion del Registro")
+    add_field("Fecha de registro", client.get("created_at", "")[:10] if client.get("created_at") else "")
+    add_field("ID Cliente", str(client.get("_id", "")))
+
+    # Footer
+    pdf.ln(10)
+    pdf.set_draw_color(200, 200, 200)
+    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+    pdf.ln(5)
+    pdf.set_font("Helvetica", "I", 8)
+    pdf.set_text_color(150, 150, 150)
+    pdf.cell(0, 5, "Documento confidencial - Tramilex - Este documento es de uso interno exclusivo del despacho.", ln=True, align="C")
+
+    pdf_bytes = pdf.output()
+
+    client_name = client.get("name", "cliente").replace(" ", "_")
+    return FastAPIResponse(
+        content=bytes(pdf_bytes),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="Ficha_Tramilex_{client_name}.pdf"'}
+    )
+
+
 @api_router.delete("/clients/{client_id}")
 async def delete_client(client_id: str, user=Depends(require_admin)):
     await db.documents.update_many(
@@ -697,7 +807,7 @@ async def get_audit_logs(
 async def get_smtp_settings(user=Depends(require_admin)):
     settings = await db.settings.find_one({"type": "smtp"}, {"_id": 0})
     if not settings:
-        return {"type": "smtp", "smtp_host": "", "smtp_port": 587, "smtp_user": "", "smtp_password": "", "from_email": ""}
+        return {"type": "smtp", "smtp_host": "", "smtp_port": 587, "smtp_user": "", "smtp_password": "", "from_email": "", "notify_email": ""}
     if settings.get("smtp_password"):
         settings["smtp_password"] = "********"
     return settings
@@ -733,7 +843,7 @@ def send_upload_notification(user_data: dict, filename: str):
 
         msg = MIMEMultipart()
         msg["From"] = settings["from_email"]
-        msg["To"] = settings["from_email"]
+        msg["To"] = settings.get("notify_email", settings["from_email"])
         msg["Subject"] = f"Nuevo documento - {user_data.get('name', 'Cliente')}"
 
         body = f"""
