@@ -292,8 +292,9 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="Tipo de archivo no permitido. Solo PDF e imagenes.")
 
     data = await file.read()
-    if len(data) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El archivo es demasiado grande. Maximo 10MB.")
+    if len(data) > 5 * 1024 * 1024:
+        size_mb = round(len(data) / (1024 * 1024), 1)
+        raise HTTPException(status_code=400, detail=f"Tu documento pesa {size_mb} MB, el maximo son 5MB. Comprime tu archivo en https://www.ilovepdf.com/es/comprimir_pdf")
 
     if category not in DOCUMENT_CATEGORIES:
         category = "otros"
@@ -380,6 +381,33 @@ async def download_document(doc_id: str, request: Request):
         content=data,
         media_type=doc.get("content_type", content_type),
         headers={"Content-Disposition": f'attachment; filename="{doc["original_filename"]}"'}
+    )
+
+
+@api_router.get("/documents/{doc_id}/preview")
+async def preview_document(doc_id: str, request: Request):
+    try:
+        user = await get_current_user(request)
+    except HTTPException:
+        raise HTTPException(status_code=401, detail="No autenticado")
+
+    try:
+        doc = await db.documents.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    if user.get("role") != "admin" and doc["user_id"] != user["_id"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    data, content_type = get_object(doc["storage_path"])
+
+    return FastAPIResponse(
+        content=data,
+        media_type=doc.get("content_type", content_type),
+        headers={"Content-Disposition": f'inline; filename="{doc["original_filename"]}"'}
     )
 
 
@@ -528,8 +556,9 @@ async def admin_upload_to_client(
         raise HTTPException(status_code=400, detail="Tipo de archivo no permitido. Solo PDF e imagenes.")
 
     data = await file.read()
-    if len(data) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El archivo es demasiado grande. Maximo 10MB.")
+    if len(data) > 5 * 1024 * 1024:
+        size_mb = round(len(data) / (1024 * 1024), 1)
+        raise HTTPException(status_code=400, detail=f"Tu documento pesa {size_mb} MB, el maximo son 5MB. Comprime tu archivo en https://www.ilovepdf.com/es/comprimir_pdf")
 
     if category not in DOCUMENT_CATEGORIES:
         category = "resolucion"

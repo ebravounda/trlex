@@ -6,11 +6,12 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Download, Trash2, MoreHorizontal, CheckCircle, Clock,
   Mail, Phone, MapPin, Globe, FileText, Image as ImageIcon, User,
-  Upload, Package, Tag
+  Upload, Package, Tag, Eye, X
 } from 'lucide-react';
 
 const CATEGORY_LABELS = {
@@ -74,6 +75,8 @@ export default function AdminClientDetail() {
   const [uploading, setUploading] = useState(false);
   const [uploadCategory, setUploadCategory] = useState('resolucion');
   const [downloading, setDownloading] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const fileInputRef = useRef(null);
 
   const fetchClient = useCallback(async () => {
@@ -94,6 +97,16 @@ export default function AdminClientDetail() {
 
   const handleAdminUpload = async (files) => {
     if (!files || files.length === 0) return;
+
+    const MAX_SIZE = 5 * 1024 * 1024;
+    for (const file of files) {
+      if (file.size > MAX_SIZE) {
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+        toast.error(`El archivo "${file.name}" pesa ${sizeMb} MB, el maximo son 5MB. Comprime en https://www.ilovepdf.com/es/comprimir_pdf`, { duration: 8000 });
+        return;
+      }
+    }
+
     setUploading(true);
     let successCount = 0;
     for (const file of files) {
@@ -130,6 +143,23 @@ export default function AdminClientDetail() {
     } finally {
       setDownloading(false);
     }
+  };
+
+  const handlePreview = async (doc) => {
+    try {
+      const res = await api.get(`/documents/${doc.id}/preview`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      setPreviewUrl(url);
+      setPreviewDoc(doc);
+    } catch (err) {
+      toast.error('Error cargando vista previa');
+    }
+  };
+
+  const closePreview = () => {
+    if (previewUrl) window.URL.revokeObjectURL(previewUrl);
+    setPreviewDoc(null);
+    setPreviewUrl(null);
   };
 
   const handleDownload = async (doc) => {
@@ -384,6 +414,15 @@ export default function AdminClientDetail() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          className="text-slate-500 hover:text-indigo-600 hover:bg-indigo-50"
+                          onClick={() => handlePreview(doc)}
+                          data-testid={`preview-doc-${doc.id}`}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           className="text-slate-500 hover:text-sky-600 hover:bg-sky-50"
                           onClick={() => handleDownload(doc)}
                           data-testid={`download-doc-${doc.id}`}
@@ -421,6 +460,48 @@ export default function AdminClientDetail() {
           </div>
         )}
       </div>
+
+      {/* Preview Dialog */}
+      <Dialog open={!!previewDoc} onOpenChange={(open) => { if (!open) closePreview(); }}>
+        <DialogContent className="max-w-4xl max-h-[90vh] p-0 overflow-hidden">
+          <DialogHeader className="px-6 py-4 border-b border-slate-200 flex flex-row items-center justify-between">
+            <DialogTitle className="text-sm font-semibold text-slate-800 truncate pr-4" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
+              {previewDoc?.original_filename}
+            </DialogTitle>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-xs"
+                onClick={() => previewDoc && handleDownload(previewDoc)}
+                data-testid="preview-download-btn"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Descargar
+              </Button>
+            </div>
+          </DialogHeader>
+          <div className="flex items-center justify-center bg-slate-100 overflow-auto" style={{ minHeight: '400px', maxHeight: 'calc(90vh - 80px)' }}>
+            {previewUrl && previewDoc?.content_type?.startsWith('image/') && (
+              <img
+                src={previewUrl}
+                alt={previewDoc.original_filename}
+                className="max-w-full max-h-[calc(90vh-80px)] object-contain"
+                data-testid="preview-image"
+              />
+            )}
+            {previewUrl && previewDoc?.content_type === 'application/pdf' && (
+              <iframe
+                src={previewUrl}
+                title={previewDoc.original_filename}
+                className="w-full h-full border-0"
+                style={{ minHeight: '70vh' }}
+                data-testid="preview-pdf"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

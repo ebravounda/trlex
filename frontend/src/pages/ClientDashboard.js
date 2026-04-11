@@ -67,6 +67,22 @@ export default function ClientDashboard() {
 
   const handleUpload = async (files) => {
     if (!files || files.length === 0) return;
+
+    const MAX_SIZE = 5 * 1024 * 1024;
+    for (const file of files) {
+      if (file.size > MAX_SIZE) {
+        const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
+        toast.error(
+          <div>
+            <p className="font-medium">Tu documento "{file.name}" pesa {sizeMb} MB, el maximo son 5MB.</p>
+            <p className="mt-1">Comprime tu archivo aqui: <a href="https://www.ilovepdf.com/es/comprimir_pdf" target="_blank" rel="noopener noreferrer" className="underline font-semibold">ilovepdf.com</a></p>
+          </div>,
+          { duration: 8000 }
+        );
+        return;
+      }
+    }
+
     setUploading(true);
     let successCount = 0;
 
@@ -79,7 +95,7 @@ export default function ClientDashboard() {
         successCount++;
       } catch (err) {
         const msg = err.response?.data?.detail || 'Error subiendo archivo';
-        toast.error(`${file.name}: ${msg}`);
+        toast.error(`${file.name}: ${msg}`, { duration: 8000 });
       }
     }
 
@@ -189,7 +205,7 @@ export default function ClientDashboard() {
                 {uploading ? 'Subiendo archivos...' : 'Arrastra tus documentos aqui'}
               </p>
               <p className="text-sm text-slate-500 mt-1">
-                o haz clic para seleccionar archivos (PDF, JPG, PNG - Max 10MB)
+                o haz clic para seleccionar archivos (PDF, JPG, PNG - Max 5MB)
               </p>
             </div>
           </div>
