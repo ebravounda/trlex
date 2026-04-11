@@ -287,6 +287,12 @@ export default function ClientDashboard() {
           )}
         </div>
       </main>
+
+      <footer className="text-center py-4">
+        <p className="text-xs text-slate-400">
+          Creado por <a href="https://goroky.com" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-slate-700 font-medium">GoRoky.com</a>
+        </p>
+      </footer>
     </div>
   );
 }

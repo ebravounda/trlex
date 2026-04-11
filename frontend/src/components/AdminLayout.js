@@ -65,6 +65,9 @@ function SidebarContent({ onClose }) {
           <LogOut className="w-4 h-4" strokeWidth={1.5} />
           Cerrar sesion
         </Button>
+        <p className="text-[10px] text-slate-400 text-center mt-3">
+          Creado por <a href="https://goroky.com" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-slate-700">GoRoky.com</a>
+        </p>
       </div>
     </div>
   );

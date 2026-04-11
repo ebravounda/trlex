@@ -329,6 +329,13 @@ export default function AuthPage() {
           </p>
         </div>
       </div>
+
+      {/* Copyright */}
+      <div className="fixed bottom-4 left-0 right-0 lg:right-1/2 text-center">
+        <p className="text-xs text-slate-400">
+          Creado por <a href="https://goroky.com" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-slate-700 font-medium">GoRoky.com</a>
+        </p>
+      </div>
     </div>
   );
 }
