@@ -1,0 +1,163 @@
+{
+  "project_context": {
+    "app_type": "dashboard",
+    "domain": "legal_immigration",
+    "theme": "light",
+    "archetype": "4_swiss_high_contrast",
+    "emotional_tone": "Professional, Trustworthy, Secure, Clear, Minimalist",
+    "key_functionalities": [
+      "Client registration with NIE/Passport",
+      "Document upload (PDF/Images) retaining original names",
+      "Lawyer Admin panel to view/manage clients and documents",
+      "Document status management (Pendiente de revisión -> Revisado)",
+      "Document download and deletion",
+      "Upload date/time tracking",
+      "SMTP configuration for admin email notifications",
+      "Filters: Origin country, NIE, Passport",
+      "Comprehensive client profile view"
+    ]
+  },
+  "design_system": {
+    "colors": {
+      "background": {
+        "primary": "#F8FAFC",
+        "secondary": "#FFFFFF",
+        "glass": "bg-white/70"
+      },
+      "surface": {
+        "card": "#FFFFFF",
+        "hover": "#F1F5F9",
+        "border": "#E2E8F0"
+      },
+      "text": {
+        "primary": "#0F172A",
+        "secondary": "#475569",
+        "tertiary": "#64748B",
+        "inverse": "#FFFFFF"
+      },
+      "brand": {
+        "primary": "#0F172A",
+        "primary_hover": "#1E293B",
+        "accent": "#0284C7"
+      },
+      "status": {
+        "pending": {
+          "bg": "#FEF3C7",
+          "text": "#B45309",
+          "border": "#FDE68A"
+        },
+        "reviewed": {
+          "bg": "#D1FAE5",
+          "text": "#047857",
+          "border": "#A7F3D0"
+        },
+        "destructive": {
+          "bg": "#FEE2E2",
+          "text": "#B91C1C",
+          "hover": "#FECACA"
+        }
+      }
+    },
+    "typography": {
+      "font_families": {
+        "heading": "Manrope, sans-serif",
+        "body": "IBM Plex Sans, sans-serif",
+        "mono": "JetBrains Mono, monospace"
+      },
+      "hierarchy": {
+        "h1": "text-4xl sm:text-5xl font-extrabold tracking-tight text-slate-900",
+        "h2": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900",
+        "h3": "text-xl sm:text-2xl font-semibold tracking-tight text-slate-800",
+        "h4": "text-lg sm:text-xl font-medium tracking-tight text-slate-800",
+        "body": "text-base text-slate-600 leading-relaxed",
+        "small": "text-sm text-slate-500",
+        "overline": "text-xs font-bold uppercase tracking-[0.2em] text-slate-500"
+      }
+    },
+    "spacing_and_layout": {
+      "generous_spacing": true,
+      "container_padding": "p-6 md:p-8 lg:p-12",
+      "gap": "gap-6 md:gap-8",
+      "radius": "rounded-lg",
+      "shadows": {
+        "ambient": "shadow-sm",
+        "card": "shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)]",
+        "glass": "shadow-[0_8px_32px_rgba(0,0,0,0.04)]"
+      },
+      "grid_patterns": {
+        "dashboard": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
+        "forms": "grid grid-cols-1 md:grid-cols-2 gap-6"
+      }
+    },
+    "surfaces": {
+      "cards": "bg-white border border-slate-200 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md",
+      "header": "sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200",
+      "sidebar": "bg-slate-50 border-r border-slate-200",
+      "inputs": "bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-colors"
+    },
+    "animations": {
+      "hover": "transition-all duration-200 ease-in-out",
+      "dialog_enter": "animate-in fade-in zoom-in-95 duration-200",
+      "list_stagger": "animate-in slide-in-from-bottom-2 fade-in duration-300"
+    }
+  },
+  "components_instructions": {
+    "shadcn_customizations": {
+      "Button": "Use solid slate-900 for primary actions. Remove rounded-full, use rounded-md. Ensure text contrast is perfect.",
+      "Table": "Dense padding (py-2 px-4). Use IBM Plex Sans for tabular data to ensure numbers (NIE/Passport) align perfectly.",
+      "Card": "Use flat design with 1px border-slate-200. Minimal shadow.",
+      "Badge": "Use soft backgrounds with dark text for statuses (e.g., Amber for Pendiente, Emerald for Revisado).",
+      "Input/Select": "Height h-10, rounded-md, crisp borders.",
+      "Dialog": "Backdrop blur is mandatory (backdrop-blur-sm bg-slate-900/20)."
+    },
+    "icons": {
+      "library": "lucide-react",
+      "style": "Stroke width 1.5, standard sizing (w-4 h-4 for inline, w-5 h-5 for sidebar)."
+    },
+    "forms": {
+      "layout": "Left-align all labels. Use grid for complex forms (e.g., origin country + residence country on same row).",
+      "required_fields": "Clearly mark required fields. Add helper text for NIE/Passport formats if possible."
+    }
+  },
+  "media": {
+    "image_urls": {
+      "login_background": {
+        "url": "https://images.unsplash.com/photo-1567030561392-0e0691af044b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBjb3Jwb3JhdGUlMjBvZmZpY2UlMjBidWlsZGluZyUyMG1pbmltYWwlMjBsaWdodHxlbnwwfHx8fDE3NzU5Mjg0NzB8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Modern minimalist corporate building, bright and clean. Used for the right side of the split auth screen.",
+        "usage": "Auth page split screen background"
+      },
+      "logo_placeholder": {
+        "url": "https://images.unsplash.com/photo-1768839722927-df0ef3188f6d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwxfHxzY2FsZXMlMjBvZiUyMGp1c3RpY2UlMjBhYnN0cmFjdCUyMHN5bWJvbHxlbnwwfHx8fDE3NzU5Mjg0NzZ8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Scales of justice abstract symbol",
+        "usage": "Sidebar logo area or login screen brand icon"
+      }
+    }
+  },
+  "application_flow": {
+    "auth": {
+      "layout": "Split screen layout (50/50). Form on the left with generous padding, login_background image on the right with object-cover.",
+      "roles": "Client Login/Register, Admin Login."
+    },
+    "client_portal": {
+      "dashboard": "Welcome header. Large 'Upload Document' drag-and-drop zone. Table below showing uploaded documents, original file name, upload date/time, and status badge."
+    },
+    "admin_portal": {
+      "layout": "Standard Dashboard layout with sticky left Sidebar and top Header.",
+      "sidebar_links": "Clients, Settings (SMTP).",
+      "clients_view": {
+        "filters": "Top bar with search input for NIE/Passport, and dropdown for Country of Origin.",
+        "table": "List of clients showing Name, NIE/Passport, Email, Origin. Clicking a row opens Client Detail view."
+      },
+      "client_detail_view": {
+        "header": "Client identity card (all personal info: email, phone, address, city, origin, residence).",
+        "documents_section": "Table of uploaded documents. Actions column: Download (icon), Change Status Dropdown, Delete (icon, red hover)."
+      },
+      "settings_view": {
+        "smtp_form": "Form for lawyer to configure SMTP host, port, user, password, from_email for notifications."
+      }
+    }
+  },
+  "testing": {
+    "attributes": "All interactive elements MUST include data-testid. e.g., data-testid='upload-doc-button', data-testid='filter-country-select', data-testid='status-badge-pending'."
+  }
+}
