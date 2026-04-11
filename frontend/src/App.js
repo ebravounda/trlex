@@ -6,6 +6,7 @@ import ClientDashboard from '@/pages/ClientDashboard';
 import AdminClients from '@/pages/AdminClients';
 import AdminClientDetail from '@/pages/AdminClientDetail';
 import AdminSettings from '@/pages/AdminSettings';
+import AdminAudit from '@/pages/AdminAudit';
 import AdminLayout from '@/components/AdminLayout';
 import { Toaster } from 'sonner';
 
@@ -49,6 +50,7 @@ function AppRoutes() {
         <Route index element={<Navigate to="clients" replace />} />
         <Route path="clients" element={<AdminClients />} />
         <Route path="clients/:clientId" element={<AdminClientDetail />} />
+        <Route path="audit" element={<AdminAudit />} />
         <Route path="settings" element={<AdminSettings />} />
       </Route>
       <Route path="*" element={<Navigate to="/login" replace />} />

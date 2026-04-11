@@ -4,8 +4,8 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, UploadFile, File, HTTPException, Request, Depends, BackgroundTasks
-from fastapi.responses import Response as FastAPIResponse
+from fastapi import FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Request, Depends, BackgroundTasks
+from fastapi.responses import Response as FastAPIResponse, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
 from bson import ObjectId
@@ -19,6 +19,8 @@ from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from typing import Optional
 import smtplib
+import zipfile
+import io
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
@@ -125,6 +127,24 @@ async def require_admin(request: Request):
     if user.get("role") != "admin":
         raise HTTPException(status_code=403, detail="Acceso denegado")
     return user
+
+
+# --- Document Categories ---
+DOCUMENT_CATEGORIES = [
+    "identificacion", "residencia", "trabajo",
+    "resolucion", "contrato", "fiscal", "otros"
+]
+
+
+# --- Audit Log Helper ---
+async def log_audit(action: str, user_id: str, user_name: str, details: dict = None):
+    await db.audit_logs.insert_one({
+        "action": action,
+        "user_id": user_id,
+        "user_name": user_name,
+        "details": details or {},
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    })
 
 
 # --- App setup ---
@@ -235,6 +255,7 @@ async def get_me(user=Depends(get_current_user)):
 async def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
+    category: str = Form("otros"),
     user=Depends(get_current_user)
 ):
     allowed_types = [
@@ -249,6 +270,9 @@ async def upload_document(
     if len(data) > 10 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="El archivo es demasiado grande. Maximo 10MB.")
 
+    if category not in DOCUMENT_CATEGORIES:
+        category = "otros"
+
     ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
     storage_path = f"{APP_NAME}/uploads/{user['_id']}/{uuid.uuid4()}.{ext}"
     result = put_object(storage_path, data, content_type)
@@ -260,10 +284,16 @@ async def upload_document(
         "content_type": content_type,
         "size": result.get("size", len(data)),
         "status": "pending_review",
+        "category": category,
+        "uploaded_by": user.get("role", "client"),
+        "uploaded_by_name": user.get("name", ""),
         "is_deleted": False,
         "uploaded_at": datetime.now(timezone.utc).isoformat()
     }
     insert_result = await db.documents.insert_one(doc)
+
+    await log_audit("document_uploaded", user["_id"], user.get("name", ""),
+                    {"filename": file.filename, "category": category, "uploaded_by": user.get("role")})
 
     background_tasks.add_task(send_upload_notification, user, file.filename)
 
@@ -273,6 +303,8 @@ async def upload_document(
         "content_type": content_type,
         "size": doc["size"],
         "status": "pending_review",
+        "category": category,
+        "uploaded_by": user.get("role", "client"),
         "uploaded_at": doc["uploaded_at"]
     }
 
@@ -291,6 +323,9 @@ async def get_my_documents(user=Depends(get_current_user)):
             "content_type": doc.get("content_type", ""),
             "size": doc.get("size", 0),
             "status": doc["status"],
+            "category": doc.get("category", "otros"),
+            "uploaded_by": doc.get("uploaded_by", "client"),
+            "uploaded_by_name": doc.get("uploaded_by_name", ""),
             "uploaded_at": doc["uploaded_at"]
         })
     return result
@@ -334,6 +369,7 @@ async def delete_document(doc_id: str, user=Depends(require_admin)):
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
+    await log_audit("document_deleted", user["_id"], user.get("name", ""), {"doc_id": doc_id})
     return {"message": "Documento eliminado"}
 
 
@@ -350,6 +386,8 @@ async def update_document_status(doc_id: str, body: DocumentStatusUpdate, user=D
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     if result.modified_count == 0:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
+    await log_audit("document_status_changed", user["_id"], user.get("name", ""),
+                    {"doc_id": doc_id, "new_status": body.status})
     return {"message": "Estado actualizado", "status": body.status}
 
 
@@ -417,6 +455,9 @@ async def get_client_detail(client_id: str, user=Depends(require_admin)):
             "content_type": doc.get("content_type", ""),
             "size": doc.get("size", 0),
             "status": doc["status"],
+            "category": doc.get("category", "otros"),
+            "uploaded_by": doc.get("uploaded_by", "client"),
+            "uploaded_by_name": doc.get("uploaded_by_name", ""),
             "uploaded_at": doc["uploaded_at"]
         })
 
@@ -436,7 +477,140 @@ async def delete_client(client_id: str, user=Depends(require_admin)):
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    await log_audit("client_deleted", user["_id"], user.get("name", ""), {"client_id": client_id})
     return {"message": "Cliente y documentos eliminados"}
+
+
+# --- Admin Upload to Client Profile ---
+@api_router.post("/clients/{client_id}/documents/upload")
+async def admin_upload_to_client(
+    client_id: str,
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...),
+    category: str = Form("resolucion"),
+    user=Depends(require_admin)
+):
+    client = await db.users.find_one({"_id": ObjectId(client_id), "role": "client"}, {"password_hash": 0})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    allowed_types = [
+        "application/pdf", "image/jpeg", "image/png",
+        "image/gif", "image/webp", "image/jpg"
+    ]
+    content_type = file.content_type or "application/octet-stream"
+    if content_type not in allowed_types:
+        raise HTTPException(status_code=400, detail="Tipo de archivo no permitido. Solo PDF e imagenes.")
+
+    data = await file.read()
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="El archivo es demasiado grande. Maximo 10MB.")
+
+    if category not in DOCUMENT_CATEGORIES:
+        category = "resolucion"
+
+    ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
+    storage_path = f"{APP_NAME}/uploads/{client_id}/{uuid.uuid4()}.{ext}"
+    result = put_object(storage_path, data, content_type)
+
+    doc = {
+        "user_id": client_id,
+        "original_filename": file.filename,
+        "storage_path": result["path"],
+        "content_type": content_type,
+        "size": result.get("size", len(data)),
+        "status": "pending_review",
+        "category": category,
+        "uploaded_by": "admin",
+        "uploaded_by_name": user.get("name", "Administrador"),
+        "is_deleted": False,
+        "uploaded_at": datetime.now(timezone.utc).isoformat()
+    }
+    insert_result = await db.documents.insert_one(doc)
+
+    await log_audit("admin_uploaded_document", user["_id"], user.get("name", ""),
+                    {"client_id": client_id, "client_name": client.get("name", ""), "filename": file.filename, "category": category})
+
+    background_tasks.add_task(
+        send_client_notification,
+        client.get("email", ""),
+        client.get("name", "Cliente"),
+        file.filename,
+        category
+    )
+
+    return {
+        "id": str(insert_result.inserted_id),
+        "original_filename": file.filename,
+        "content_type": content_type,
+        "size": doc["size"],
+        "status": "pending_review",
+        "category": category,
+        "uploaded_by": "admin",
+        "uploaded_at": doc["uploaded_at"]
+    }
+
+
+# --- Bulk Download (ZIP) ---
+@api_router.get("/clients/{client_id}/download-all")
+async def download_all_documents(client_id: str, user=Depends(require_admin)):
+    client = await db.users.find_one({"_id": ObjectId(client_id), "role": "client"}, {"name": 1})
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    docs = await db.documents.find(
+        {"user_id": client_id, "is_deleted": False}
+    ).to_list(1000)
+
+    if not docs:
+        raise HTTPException(status_code=404, detail="No hay documentos para descargar")
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for doc in docs:
+            try:
+                data, _ = get_object(doc["storage_path"])
+                filename = doc["original_filename"]
+                cat = doc.get("category", "otros")
+                zf.writestr(f"{cat}/{filename}", data)
+            except Exception as e:
+                logger.error(f"Error descargando archivo {doc['original_filename']}: {e}")
+
+    zip_buffer.seek(0)
+    client_name = client.get("name", "cliente").replace(" ", "_")
+
+    await log_audit("bulk_download", user["_id"], user.get("name", ""),
+                    {"client_id": client_id, "client_name": client.get("name", "")})
+
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="documentos_{client_name}.zip"'}
+    )
+
+
+# --- Audit Log Routes ---
+@api_router.get("/audit")
+async def get_audit_logs(
+    page: int = 1,
+    limit: int = 50,
+    action: str = "",
+    user=Depends(require_admin)
+):
+    query = {}
+    if action:
+        query["action"] = action
+
+    skip = (page - 1) * limit
+    total = await db.audit_logs.count_documents(query)
+    logs = await db.audit_logs.find(query, {"_id": 0}).sort("timestamp", -1).skip(skip).limit(limit).to_list(limit)
+
+    return {
+        "logs": logs,
+        "total": total,
+        "page": page,
+        "pages": (total + limit - 1) // limit
+    }
 
 
 # --- Settings Routes ---
@@ -461,6 +635,7 @@ async def update_smtp_settings(settings: SMTPSettingsInput, user=Depends(require
             doc["smtp_password"] = existing.get("smtp_password", "")
 
     await db.settings.update_one({"type": "smtp"}, {"$set": doc}, upsert=True)
+    await log_audit("smtp_updated", user["_id"], user.get("name", ""), {"smtp_host": doc["smtp_host"]})
     return {"message": "Configuracion SMTP actualizada"}
 
 
@@ -500,6 +675,58 @@ def send_upload_notification(user_data: dict, filename: str):
         logger.info(f"Notificacion enviada por documento de {user_data.get('name')}")
     except Exception as e:
         logger.error(f"Error enviando notificacion: {e}")
+
+
+# --- Client notification (when admin uploads) ---
+def send_client_notification(client_email: str, client_name: str, filename: str, category: str):
+    try:
+        import pymongo
+        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
+        sync_db = sync_client[os.environ['DB_NAME']]
+        settings = sync_db.settings.find_one({"type": "smtp"})
+        sync_client.close()
+
+        if not settings or not settings.get("smtp_host"):
+            logger.info("SMTP no configurado, notificacion al cliente omitida")
+            return
+
+        if not client_email:
+            logger.info("Cliente sin email, notificacion omitida")
+            return
+
+        category_labels = {
+            "identificacion": "Identificacion", "residencia": "Residencia",
+            "trabajo": "Trabajo", "resolucion": "Resolucion",
+            "contrato": "Contrato", "fiscal": "Fiscal", "otros": "Otros"
+        }
+
+        msg = MIMEMultipart()
+        msg["From"] = settings["from_email"]
+        msg["To"] = client_email
+        msg["Subject"] = f"Tramilex - Nuevo documento en tu expediente"
+
+        body = f"""
+        <h2>Nuevo documento disponible</h2>
+        <p>Hola <strong>{client_name}</strong>,</p>
+        <p>Tu abogado ha subido un nuevo documento a tu expediente que requiere tu revision.</p>
+        <p><strong>Archivo:</strong> {filename}</p>
+        <p><strong>Categoria:</strong> {category_labels.get(category, category)}</p>
+        <p><strong>Fecha:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}</p>
+        <br>
+        <p>Ingresa a tu cuenta de Tramilex para revisar y descargar el documento.</p>
+        <br>
+        <p>Saludos,<br>Equipo Tramilex</p>
+        """
+        msg.attach(MIMEText(body, "html"))
+
+        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
+        server.starttls()
+        server.login(settings["smtp_user"], settings["smtp_password"])
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"Notificacion enviada al cliente {client_name} ({client_email})")
+    except Exception as e:
+        logger.error(f"Error enviando notificacion al cliente: {e}")
 
 
 # --- Startup ---

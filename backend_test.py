@@ -14,6 +14,7 @@ class TramiLexAPITester:
         self.client_token = None
         self.client_id = None
         self.test_doc_id = None
+        self.admin_doc_id = None
         self.tests_run = 0
         self.tests_passed = 0
         self.failed_tests = []
@@ -38,7 +39,7 @@ class TramiLexAPITester:
             elif method == 'POST':
                 if files:
                     headers.pop('Content-Type', None)  # Let requests set it for multipart
-                    response = requests.post(url, files=files, headers=headers, timeout=30)
+                    response = requests.post(url, files=files, data=data, headers=headers, timeout=30)
                 else:
                     response = requests.post(url, json=data, headers=headers, timeout=30)
             elif method == 'PUT':
@@ -157,7 +158,7 @@ class TramiLexAPITester:
         return success
 
     def test_document_upload(self):
-        """Test document upload"""
+        """Test document upload with category"""
         if not self.client_token:
             return False
             
@@ -165,18 +166,20 @@ class TramiLexAPITester:
         test_content = b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n>>\nendobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000074 00000 n \n0000000120 00000 n \ntrailer\n<<\n/Size 4\n/Root 1 0 R\n>>\nstartxref\n179\n%%EOF"
         
         files = {'file': ('test_document.pdf', BytesIO(test_content), 'application/pdf')}
+        data = {'category': 'identificacion'}
         
         success, response = self.run_test(
-            "Document Upload",
+            "Document Upload with Category",
             "POST",
             "documents/upload",
             200,
             files=files,
+            data=data,
             token=self.client_token
         )
         if success and 'id' in response:
             self.test_doc_id = response['id']
-            self.log(f"   Document uploaded with ID: {self.test_doc_id}")
+            self.log(f"   Document uploaded with ID: {self.test_doc_id}, Category: {response.get('category', 'N/A')}")
             return True
         return False
 
@@ -324,21 +327,135 @@ class TramiLexAPITester:
         )
         return success
 
+    def test_admin_upload_to_client(self):
+        """Test admin uploading document to client profile"""
+        if not self.admin_token or not self.client_id:
+            return False
+            
+        # Create a test PDF file for admin upload
+        test_content = b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n>>\nendobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000074 00000 n \n0000000120 00000 n \ntrailer\n<<\n/Size 4\n/Root 1 0 R\n>>\nstartxref\n179\n%%EOF"
+        
+        files = {'file': ('admin_resolution.pdf', BytesIO(test_content), 'application/pdf')}
+        data = {'category': 'resolucion'}
+        
+        success, response = self.run_test(
+            "Admin Upload to Client Profile",
+            "POST",
+            f"clients/{self.client_id}/documents/upload",
+            200,
+            files=files,
+            data=data,
+            token=self.admin_token
+        )
+        if success and 'id' in response:
+            self.admin_doc_id = response['id']
+            self.log(f"   Admin document uploaded with ID: {self.admin_doc_id}, uploaded_by: {response.get('uploaded_by', 'N/A')}")
+            return True
+        return False
+
+    def test_bulk_download(self):
+        """Test bulk download all client documents as ZIP"""
+        if not self.admin_token or not self.client_id:
+            return False
+            
+        success, content = self.run_test(
+            "Bulk Download Client Documents (ZIP)",
+            "GET",
+            f"clients/{self.client_id}/download-all",
+            200,
+            token=self.admin_token,
+            response_type='binary'
+        )
+        if success:
+            self.log(f"   ZIP file downloaded, size: {len(content)} bytes")
+            return True
+        return False
+
+    def test_audit_logs(self):
+        """Test audit log API"""
+        if not self.admin_token:
+            return False
+            
+        # Test getting audit logs
+        success, response = self.run_test(
+            "Get Audit Logs",
+            "GET",
+            "audit",
+            200,
+            token=self.admin_token
+        )
+        
+        if success:
+            logs = response.get('logs', [])
+            total = response.get('total', 0)
+            self.log(f"   Found {total} audit logs, returned {len(logs)} logs")
+            
+            # Test pagination
+            success2, response2 = self.run_test(
+                "Get Audit Logs with Pagination",
+                "GET",
+                "audit?page=1&limit=10",
+                200,
+                token=self.admin_token
+            )
+            
+            # Test filtering by action
+            success3, response3 = self.run_test(
+                "Get Audit Logs Filtered",
+                "GET",
+                "audit?action=document_uploaded",
+                200,
+                token=self.admin_token
+            )
+            
+            return success and success2 and success3
+        return False
+
+    def test_document_categories(self):
+        """Test document upload with different categories"""
+        if not self.client_token:
+            return False
+            
+        categories = ['identificacion', 'residencia', 'trabajo', 'contrato', 'fiscal', 'otros']
+        success_count = 0
+        
+        for category in categories:
+            test_content = b"%PDF-1.4\n1 0 obj\n<<\n/Type /Catalog\n/Pages 2 0 R\n>>\nendobj\n2 0 obj\n<<\n/Type /Pages\n/Kids [3 0 R]\n/Count 1\n>>\nendobj\n3 0 obj\n<<\n/Type /Page\n/Parent 2 0 R\n/MediaBox [0 0 612 792]\n>>\nendobj\nxref\n0 4\n0000000000 65535 f \n0000000009 00000 n \n0000000074 00000 n \n0000000120 00000 n \ntrailer\n<<\n/Size 4\n/Root 1 0 R\n>>\nstartxref\n179\n%%EOF"
+            
+            files = {'file': (f'test_{category}.pdf', BytesIO(test_content), 'application/pdf')}
+            data = {'category': category}
+            
+            success, response = self.run_test(
+                f"Document Upload - Category: {category}",
+                "POST",
+                "documents/upload",
+                200,
+                files=files,
+                data=data,
+                token=self.client_token
+            )
+            if success and response.get('category') == category:
+                success_count += 1
+                
+        self.log(f"   Successfully tested {success_count}/{len(categories)} categories")
+        return success_count == len(categories)
+
     def run_all_tests(self):
         """Run all tests in sequence"""
-        self.log("🚀 Starting TramiLex API Tests")
+        self.log("🚀 Starting TramiLex API Tests - Iteration 2")
         self.log(f"   Base URL: {self.base_url}")
+        self.log("   Testing new features: Document categories, Admin upload, Bulk download, Audit logs")
         
         # Authentication tests
         self.log("\n📋 Authentication Tests")
         self.test_admin_login()
         self.test_client_registration()
         self.test_auth_me()
-        self.test_logout()
         
-        # Document tests
-        self.log("\n📄 Document Tests")
+        # Document tests with categories
+        self.log("\n📄 Document Tests (with Categories)")
         self.test_document_upload()
+        self.test_document_categories()
         self.test_get_documents()
         self.test_document_download()
         
@@ -349,7 +466,17 @@ class TramiLexAPITester:
         self.test_admin_update_document_status()
         self.test_countries_list()
         self.test_smtp_settings()
+        
+        # New features tests
+        self.log("\n🆕 New Features Tests")
+        self.test_admin_upload_to_client()
+        self.test_bulk_download()
+        self.test_audit_logs()
+        
+        # Cleanup
+        self.log("\n🧹 Cleanup Tests")
         self.test_admin_delete_document()
+        self.test_logout()
         
         # Print results
         self.log(f"\n📊 Test Results: {self.tests_passed}/{self.tests_run} passed")

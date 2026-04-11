@@ -1,15 +1,37 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { toast } from 'sonner';
 import {
   ArrowLeft, Download, Trash2, MoreHorizontal, CheckCircle, Clock,
-  Mail, Phone, MapPin, Globe, FileText, Image as ImageIcon, User
+  Mail, Phone, MapPin, Globe, FileText, Image as ImageIcon, User,
+  Upload, Package, Tag
 } from 'lucide-react';
+
+const CATEGORY_LABELS = {
+  identificacion: 'Identificacion',
+  residencia: 'Residencia',
+  trabajo: 'Trabajo',
+  resolucion: 'Resolucion',
+  contrato: 'Contrato',
+  fiscal: 'Fiscal',
+  otros: 'Otros'
+};
+
+const ADMIN_CATEGORIES = [
+  { value: "resolucion", label: "Resolucion" },
+  { value: "contrato", label: "Contrato" },
+  { value: "identificacion", label: "Identificacion" },
+  { value: "residencia", label: "Residencia" },
+  { value: "trabajo", label: "Trabajo" },
+  { value: "fiscal", label: "Fiscal" },
+  { value: "otros", label: "Otros" },
+];
 
 function formatDate(iso) {
   if (!iso) return '-';
@@ -49,6 +71,10 @@ export default function AdminClientDetail() {
   const navigate = useNavigate();
   const [client, setClient] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [uploadCategory, setUploadCategory] = useState('resolucion');
+  const [downloading, setDownloading] = useState(false);
+  const fileInputRef = useRef(null);
 
   const fetchClient = useCallback(async () => {
     try {
@@ -65,6 +91,46 @@ export default function AdminClientDetail() {
   useEffect(() => {
     fetchClient();
   }, [fetchClient]);
+
+  const handleAdminUpload = async (files) => {
+    if (!files || files.length === 0) return;
+    setUploading(true);
+    let successCount = 0;
+    for (const file of files) {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('category', uploadCategory);
+      try {
+        await api.post(`/clients/${clientId}/documents/upload`, formData);
+        successCount++;
+      } catch (err) {
+        toast.error(`${file.name}: ${err.response?.data?.detail || 'Error'}`);
+      }
+    }
+    if (successCount > 0) {
+      toast.success(`${successCount} documento(s) subido(s) al perfil del cliente`);
+      fetchClient();
+    }
+    setUploading(false);
+  };
+
+  const handleBulkDownload = async () => {
+    setDownloading(true);
+    try {
+      const res = await api.get(`/clients/${clientId}/download-all`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `documentos_${(client?.name || 'cliente').replace(/\s/g, '_')}.zip`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+      toast.success('Descarga iniciada');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error descargando documentos');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const handleDownload = async (doc) => {
     try {
@@ -155,11 +221,73 @@ export default function AdminClientDetail() {
         </div>
       </div>
 
-      {/* Documents */}
+      {/* Admin Upload + Documents */}
       <div>
-        <h2 className="text-base md:text-lg font-semibold text-slate-900 mb-4" style={{ fontFamily: 'Manrope, sans-serif' }}>
-          Documentos ({client.documents?.length || 0})
-        </h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-base md:text-lg font-semibold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>
+            Documentos ({client.documents?.length || 0})
+          </h2>
+          <div className="flex items-center gap-2">
+            {client.documents?.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-2 text-slate-600"
+                onClick={handleBulkDownload}
+                disabled={downloading}
+                data-testid="bulk-download-btn"
+              >
+                <Package className="w-4 h-4" />
+                {downloading ? 'Descargando...' : 'Descargar todos (ZIP)'}
+              </Button>
+            )}
+          </div>
+        </div>
+
+        {/* Admin Upload Section */}
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5 mb-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center">
+              <Upload className="w-4 h-4 text-indigo-600" strokeWidth={1.5} />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-slate-800" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                Subir documento al cliente
+              </p>
+              <p className="text-xs text-slate-500">El cliente recibira una notificacion por email</p>
+            </div>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-3">
+            <Select value={uploadCategory} onValueChange={setUploadCategory}>
+              <SelectTrigger className="w-full sm:w-48 h-10 bg-white border-slate-300" data-testid="admin-upload-category-select">
+                <SelectValue placeholder="Categoria" />
+              </SelectTrigger>
+              <SelectContent>
+                {ADMIN_CATEGORIES.map(c => (
+                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              accept=".pdf,.jpg,.jpeg,.png,.gif,.webp"
+              className="hidden"
+              onChange={(e) => handleAdminUpload(Array.from(e.target.files))}
+              data-testid="admin-file-input"
+            />
+            <Button
+              className="h-10 bg-slate-900 hover:bg-slate-800 text-white rounded-md font-medium gap-2"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              data-testid="admin-upload-btn"
+            >
+              <Upload className="w-4 h-4" />
+              {uploading ? 'Subiendo...' : 'Seleccionar archivos'}
+            </Button>
+          </div>
+        </div>
 
         {!client.documents || client.documents.length === 0 ? (
           <div className="bg-white border border-slate-200 rounded-lg p-12 text-center">
@@ -172,8 +300,9 @@ export default function AdminClientDetail() {
               <TableHeader>
                 <TableRow className="bg-slate-50/50">
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Archivo</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Tamano</TableHead>
-                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Fecha de carga</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Categoria</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Subido por</TableHead>
+                  <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Fecha</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Estado</TableHead>
                   <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4 text-right">Acciones</TableHead>
                 </TableRow>
@@ -184,13 +313,27 @@ export default function AdminClientDetail() {
                     <TableCell className="py-3 px-4">
                       <div className="flex items-center gap-2.5">
                         {getFileIcon(doc.content_type)}
-                        <span className="text-sm font-medium text-slate-800 truncate max-w-[200px]" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
+                        <span className="text-sm font-medium text-slate-800 truncate max-w-[180px]" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
                           {doc.original_filename}
                         </span>
                       </div>
                     </TableCell>
-                    <TableCell className="py-3 px-4 text-sm text-slate-500" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
-                      {formatSize(doc.size)}
+                    <TableCell className="py-3 px-4">
+                      <div className="flex items-center gap-1.5">
+                        <Tag className="w-3 h-3 text-slate-400" />
+                        <span className="text-sm text-slate-600">{CATEGORY_LABELS[doc.category] || doc.category || 'Otros'}</span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="py-3 px-4">
+                      <Badge
+                        className={`text-xs font-medium ${
+                          doc.uploaded_by === 'admin'
+                            ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
+                            : 'bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {doc.uploaded_by === 'admin' ? 'Abogado' : 'Cliente'}
+                      </Badge>
                     </TableCell>
                     <TableCell className="py-3 px-4">
                       <div className="flex items-center gap-1.5 text-sm text-slate-500">

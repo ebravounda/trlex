@@ -4,11 +4,26 @@ import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Upload, Download, LogOut, FileText, Image as ImageIcon, Clock } from 'lucide-react';
+import { Upload, Download, LogOut, FileText, Image as ImageIcon, Clock, Tag } from 'lucide-react';
 
 const LOGO_URL = "https://tramilex.es/wp-content/uploads/2024/07/logo-tramilex-v3-1.jpg";
+
+const CLIENT_CATEGORIES = [
+  { value: "identificacion", label: "Identificacion" },
+  { value: "residencia", label: "Residencia" },
+  { value: "trabajo", label: "Trabajo" },
+  { value: "contrato", label: "Contrato" },
+  { value: "fiscal", label: "Fiscal" },
+  { value: "otros", label: "Otros" },
+];
+
+const CATEGORY_LABELS = {
+  identificacion: 'Identificacion', residencia: 'Residencia', trabajo: 'Trabajo',
+  resolucion: 'Resolucion', contrato: 'Contrato', fiscal: 'Fiscal', otros: 'Otros'
+};
 
 function formatDate(iso) {
   if (!iso) return '-';
@@ -34,6 +49,7 @@ export default function ClientDashboard() {
   const [documents, setDocuments] = useState([]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
+  const [selectedCategory, setSelectedCategory] = useState('otros');
   const fileInputRef = useRef(null);
 
   const fetchDocuments = useCallback(async () => {
@@ -57,6 +73,7 @@ export default function ClientDashboard() {
     for (const file of files) {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('category', selectedCategory);
       try {
         await api.post('/documents/upload', formData);
         successCount++;
@@ -123,19 +140,35 @@ export default function ClientDashboard() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8 md:py-12 space-y-8">
-        {/* Upload Zone */}
-        <div
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`relative border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-all duration-200 ${
-            dragOver
-              ? 'border-sky-500 bg-sky-50/50'
-              : 'border-slate-300 bg-white hover:border-slate-400 hover:bg-slate-50'
-          }`}
-          data-testid="upload-zone"
-        >
+        {/* Category Select + Upload Zone */}
+        <div className="space-y-3">
+          <div className="flex items-center gap-3">
+            <Tag className="w-4 h-4 text-slate-400" />
+            <span className="text-sm font-medium text-slate-700">Categoria del documento:</span>
+            <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+              <SelectTrigger className="w-48 h-9 bg-white border-slate-300" data-testid="upload-category-select">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {CLIENT_CATEGORIES.map(c => (
+                  <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+            className={`relative border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-all duration-200 ${
+              dragOver
+                ? 'border-sky-500 bg-sky-50/50'
+                : 'border-slate-300 bg-white hover:border-slate-400 hover:bg-slate-50'
+            }`}
+            data-testid="upload-zone"
+          >
           <input
             ref={fileInputRef}
             type="file"
@@ -165,6 +198,7 @@ export default function ClientDashboard() {
               <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-900 border-t-transparent" />
             </div>
           )}
+          </div>
         </div>
 
         {/* Documents Table */}
@@ -184,7 +218,8 @@ export default function ClientDashboard() {
                 <TableHeader>
                   <TableRow className="bg-slate-50/50">
                     <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Archivo</TableHead>
-                    <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Tamano</TableHead>
+                    <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Categoria</TableHead>
+                    <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Subido por</TableHead>
                     <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Fecha</TableHead>
                     <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Estado</TableHead>
                     <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4 text-right">Accion</TableHead>
@@ -196,13 +231,24 @@ export default function ClientDashboard() {
                       <TableCell className="py-3 px-4">
                         <div className="flex items-center gap-2.5">
                           {getFileIcon(doc.content_type)}
-                          <span className="text-sm font-medium text-slate-800 truncate max-w-[200px]" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
+                          <span className="text-sm font-medium text-slate-800 truncate max-w-[180px]" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
                             {doc.original_filename}
                           </span>
                         </div>
                       </TableCell>
-                      <TableCell className="py-3 px-4 text-sm text-slate-500" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
-                        {formatSize(doc.size)}
+                      <TableCell className="py-3 px-4">
+                        <span className="text-sm text-slate-600">{CATEGORY_LABELS[doc.category] || 'Otros'}</span>
+                      </TableCell>
+                      <TableCell className="py-3 px-4">
+                        <Badge
+                          className={`text-xs font-medium ${
+                            doc.uploaded_by === 'admin'
+                              ? 'bg-indigo-100 text-indigo-700 border-indigo-200'
+                              : 'bg-slate-100 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          {doc.uploaded_by === 'admin' ? 'Abogado' : 'Yo'}
+                        </Badge>
                       </TableCell>
                       <TableCell className="py-3 px-4">
                         <div className="flex items-center gap-1.5 text-sm text-slate-500">
