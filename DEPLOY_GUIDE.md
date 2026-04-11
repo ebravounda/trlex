@@ -1,106 +1,58 @@
-# Guia de Despliegue - Tramilex en Plesk (tramilex.goroky.es)
+# Despliegue Tramilex en tramilex.goroky.es (Plesk)
+# Solo afecta al subdominio - no toca otras cuentas
 
-## Arquitectura del Sistema
+## Ya tienes: MongoDB, Python, Node.js, subdominio con SSL
+
+---
+
+## PASO 1: Subir el codigo al servidor
+
+Conecta por SSH y ejecuta:
+
+```bash
+# Crear carpeta del proyecto DENTRO del subdominio
+cd /var/www/vhosts/goroky.es/tramilex.goroky.es
+mkdir -p app/backend app/frontend
 ```
-tramilex.goroky.es
-├── Backend: FastAPI (Python 3.11+) → puerto 8001
-├── Frontend: React (build estatico) → servido por Nginx
-└── Base de datos: MongoDB
+
+### Opcion A: Subir con SFTP (FileZilla, WinSCP, etc.)
+Conecta al servidor y sube:
+- Carpeta `backend/` completa → `/var/www/vhosts/goroky.es/tramilex.goroky.es/app/backend/`
+- Carpeta `frontend/` completa → `/var/www/vhosts/goroky.es/tramilex.goroky.es/app/frontend/`
+
+### Opcion B: Subir con SCP desde terminal
+```bash
+scp -r backend/ root@TU_SERVIDOR:/var/www/vhosts/goroky.es/tramilex.goroky.es/app/backend/
+scp -r frontend/ root@TU_SERVIDOR:/var/www/vhosts/goroky.es/tramilex.goroky.es/app/frontend/
 ```
 
 ---
 
-## PASO 1: Preparar el Servidor
-
-### 1.1 Requisitos del servidor
-- Ubuntu 20.04+ o Debian 11+
-- Plesk Obsidian
-- Python 3.11+
-- Node.js 18+ y Yarn
-- MongoDB 6+
-- Acceso SSH root
-
-### 1.2 Instalar MongoDB (si no esta instalado)
-```bash
-# Ubuntu/Debian
-curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | sudo gpg -o /usr/share/keyrings/mongodb-server-7.0.gpg --dearmor
-echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/debian bookworm/mongodb-org/7.0 main" | sudo tee /etc/apt/sources.list.d/mongodb-org-7.0.list
-sudo apt-get update
-sudo apt-get install -y mongodb-org
-sudo systemctl start mongod
-sudo systemctl enable mongod
-```
-
-### 1.3 Instalar Python 3.11+ (si no esta)
-```bash
-sudo apt-get install -y python3.11 python3.11-venv python3-pip
-```
-
-### 1.4 Instalar Node.js y Yarn
-```bash
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-npm install -g yarn
-```
-
----
-
-## PASO 2: Crear el subdominio en Plesk
-
-1. Entra en Plesk → **Websites & Domains**
-2. Click en **Add Subdomain**
-3. Nombre: `tramilex` (quedara `tramilex.goroky.es`)
-4. Root del documento: `/var/www/vhosts/goroky.es/tramilex.goroky.es`
-5. Activa **SSL/TLS** con Let's Encrypt
-
----
-
-## PASO 3: Subir el codigo
-
-### 3.1 Crear estructura de carpetas
-```bash
-# Conectar por SSH
-ssh root@tu-servidor
-
-# Crear directorios
-mkdir -p /var/www/vhosts/goroky.es/tramilex.goroky.es/app
-cd /var/www/vhosts/goroky.es/tramilex.goroky.es/app
-
-# Crear subcarpetas
-mkdir -p backend frontend
-```
-
-### 3.2 Subir archivos
-Puedes usar SCP, SFTP (FileZilla) o git. Sube toda la carpeta `/app/backend/` y `/app/frontend/` al servidor.
+## PASO 2: Configurar el Backend
 
 ```bash
-# Opcion 1: SCP desde tu maquina local
-scp -r /ruta/local/backend/ root@tu-servidor:/var/www/vhosts/goroky.es/tramilex.goroky.es/app/backend/
-scp -r /ruta/local/frontend/ root@tu-servidor:/var/www/vhosts/goroky.es/tramilex.goroky.es/app/frontend/
-```
+# Entrar al servidor por SSH
+ssh root@TU_SERVIDOR
 
----
-
-## PASO 4: Configurar el Backend
-
-### 4.1 Crear entorno virtual e instalar dependencias
-```bash
+# Ir a la carpeta del backend
 cd /var/www/vhosts/goroky.es/tramilex.goroky.es/app/backend
 
-python3.11 -m venv venv
+# Crear entorno virtual (aislado, no afecta nada mas)
+python3 -m venv venv
 source venv/bin/activate
 
+# Instalar dependencias
 pip install --upgrade pip
 pip install -r requirements.txt
 ```
 
-### 4.2 Crear archivo .env de produccion
+### Crear .env de produccion
 ```bash
-cat > .env << 'EOF'
+cat > /var/www/vhosts/goroky.es/tramilex.goroky.es/app/backend/.env << 'EOF'
 MONGO_URL="mongodb://localhost:27017"
 DB_NAME="tramilex_prod"
 CORS_ORIGINS="https://tramilex.goroky.es"
-JWT_SECRET="GENERA_UNA_CLAVE_ALEATORIA_DE_64_CARACTERES"
+JWT_SECRET="CAMBIA_ESTO_POR_TU_CLAVE"
 ADMIN_EMAIL="malcsfuz@tramilex.es"
 ADMIN_PASSWORD="Admin123!"
 SUPPORT_EMAIL="soporte@goroky.com"
@@ -109,228 +61,158 @@ EMERGENT_LLM_KEY="sk-emergent-8D26a14423aF8B2046"
 EOF
 ```
 
-> **IMPORTANTE**: Genera un JWT_SECRET unico:
-> ```bash
-> python3 -c "import secrets; print(secrets.token_hex(32))"
-> ```
+**Genera tu JWT_SECRET unico** (copia el resultado y pegalo en el .env):
+```bash
+python3 -c "import secrets; print(secrets.token_hex(32))"
+```
 
-### 4.3 Probar que el backend arranca
+### Verificar que arranca
 ```bash
 source venv/bin/activate
-uvicorn server:app --host 0.0.0.0 --port 8001
-# Deberia mostrar: "Application startup complete"
+cd /var/www/vhosts/goroky.es/tramilex.goroky.es/app/backend
+uvicorn server:app --host 127.0.0.1 --port 8001
+# Debe mostrar: "Application startup complete"
 # Ctrl+C para detener
 ```
 
-### 4.4 Crear servicio systemd para el backend
+---
+
+## PASO 3: Crear servicio del backend (solo para este subdominio)
+
 ```bash
-sudo cat > /etc/systemd/system/tramilex-backend.service << 'EOF'
+cat > /etc/systemd/system/tramilex-backend.service << 'EOF'
 [Unit]
 Description=Tramilex Backend API
 After=network.target mongod.service
 
 [Service]
 Type=simple
-User=www-data
-Group=www-data
 WorkingDirectory=/var/www/vhosts/goroky.es/tramilex.goroky.es/app/backend
-Environment=PATH=/var/www/vhosts/goroky.es/tramilex.goroky.es/app/backend/venv/bin
 ExecStart=/var/www/vhosts/goroky.es/tramilex.goroky.es/app/backend/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8001 --workers 2
 Restart=always
 RestartSec=5
+Environment=PATH=/var/www/vhosts/goroky.es/tramilex.goroky.es/app/backend/venv/bin:/usr/bin
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-sudo systemctl daemon-reload
-sudo systemctl enable tramilex-backend
-sudo systemctl start tramilex-backend
-sudo systemctl status tramilex-backend
+systemctl daemon-reload
+systemctl enable tramilex-backend
+systemctl start tramilex-backend
+systemctl status tramilex-backend
 ```
+
+> El backend escucha SOLO en 127.0.0.1:8001 (no accesible desde fuera, solo Nginx lo conecta)
 
 ---
 
-## PASO 5: Compilar el Frontend
+## PASO 4: Compilar el Frontend
 
-### 5.1 Configurar .env del frontend
 ```bash
 cd /var/www/vhosts/goroky.es/tramilex.goroky.es/app/frontend
 
+# Crear .env de produccion
 cat > .env << 'EOF'
 REACT_APP_BACKEND_URL=https://tramilex.goroky.es
 EOF
-```
 
-### 5.2 Instalar dependencias y compilar
-```bash
+# Instalar dependencias y compilar
 yarn install
 yarn build
-```
 
-Esto genera la carpeta `build/` con los archivos estaticos.
-
-### 5.3 Copiar build al document root de Plesk
-```bash
-# Copiar el contenido del build al directorio web del subdominio
+# Copiar el build al document root del subdominio
 cp -r build/* /var/www/vhosts/goroky.es/tramilex.goroky.es/
 ```
 
 ---
 
-## PASO 6: Configurar Nginx en Plesk
+## PASO 5: Configurar Nginx en Plesk (SOLO este subdominio)
 
-### 6.1 Configuracion de Nginx (Apache & Nginx Settings)
-
-En Plesk, ve a: **tramilex.goroky.es → Apache & Nginx Settings**
-
-En la seccion **Additional Nginx directives**, pega:
+En Plesk:
+1. Ve a **Websites & Domains**
+2. Click en **tramilex.goroky.es**
+3. Click en **Apache & Nginx Settings**
+4. Busca la seccion **Additional Nginx directives**
+5. Pega EXACTAMENTE esto:
 
 ```nginx
-# Proxy para el backend API
 location /api/ {
     proxy_pass http://127.0.0.1:8001/api/;
     proxy_http_version 1.1;
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection 'upgrade';
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
-    proxy_cache_bypass $http_upgrade;
     proxy_read_timeout 120s;
     proxy_send_timeout 120s;
     client_max_body_size 15M;
 }
 
-# SPA: redirigir todas las rutas al index.html
 location / {
     try_files $uri $uri/ /index.html;
 }
 ```
 
-### 6.2 Si usas Apache en lugar de Nginx
+6. Click **OK** / **Apply**
 
-Crea un archivo `.htaccess` en el document root:
-```apache
-<IfModule mod_rewrite.c>
-    RewriteEngine On
-    RewriteBase /
-    
-    # No reescribir archivos o directorios existentes
-    RewriteCond %{REQUEST_FILENAME} !-f
-    RewriteCond %{REQUEST_FILENAME} !-d
-    
-    # Proxy para API
-    RewriteRule ^api/(.*)$ http://127.0.0.1:8001/api/$1 [P,L]
-    
-    # SPA fallback
-    RewriteRule ^ /index.html [L]
-</IfModule>
-
-# Para proxy inverso con Apache
-<IfModule mod_proxy.c>
-    ProxyPass /api/ http://127.0.0.1:8001/api/
-    ProxyPassReverse /api/ http://127.0.0.1:8001/api/
-</IfModule>
-```
+> Esto SOLO afecta a tramilex.goroky.es. Ningun otro dominio o subdominio se ve afectado.
 
 ---
 
-## PASO 7: Verificar el despliegue
+## PASO 6: Verificar
 
-### 7.1 Verificar el backend
+### Desde tu terminal:
 ```bash
-curl https://tramilex.goroky.es/api/auth/login \
-  -X POST \
+# Verificar API
+curl -X POST https://tramilex.goroky.es/api/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"malcsfuz@tramilex.es","password":"Admin123!"}'
+
+# Debe devolver JSON con token
 ```
-Debe devolver un JSON con token.
 
-### 7.2 Verificar el frontend
-Abre `https://tramilex.goroky.es/login` en el navegador. Debe mostrar la pagina de login de Tramilex.
-
-### 7.3 Verificar login admin
-Login con `malcsfuz@tramilex.es` / `Admin123!` → debe redirigir a `/admin/clients`
+### Desde el navegador:
+1. Abre https://tramilex.goroky.es/login
+2. Login con: malcsfuz@tramilex.es / Admin123!
+3. Debe entrar al panel de admin
 
 ---
 
-## PASO 8: Mantenimiento
+## Comandos utiles (mantenimiento)
 
-### Reiniciar el backend
 ```bash
-sudo systemctl restart tramilex-backend
-```
+# Ver estado del backend
+systemctl status tramilex-backend
 
-### Ver logs del backend
-```bash
-sudo journalctl -u tramilex-backend -f
-```
+# Reiniciar backend (despues de cambios en .env o codigo)
+systemctl restart tramilex-backend
 
-### Actualizar el codigo
-```bash
-# Backend
-cd /var/www/vhosts/goroky.es/tramilex.goroky.es/app/backend
-source venv/bin/activate
-pip install -r requirements.txt
-sudo systemctl restart tramilex-backend
+# Ver logs del backend en tiempo real
+journalctl -u tramilex-backend -f
 
-# Frontend
+# Ver ultimos 50 logs
+journalctl -u tramilex-backend -n 50
+
+# Recompilar frontend (despues de cambios en codigo)
 cd /var/www/vhosts/goroky.es/tramilex.goroky.es/app/frontend
-yarn install
 yarn build
 cp -r build/* /var/www/vhosts/goroky.es/tramilex.goroky.es/
-```
 
-### Backup de MongoDB
-```bash
-mongodump --db tramilex_prod --out /backups/tramilex/$(date +%Y%m%d)
-```
-
-### Restaurar MongoDB
-```bash
-mongorestore --db tramilex_prod /backups/tramilex/20260211/tramilex_prod/
+# Backup de la base de datos
+mongodump --db tramilex_prod --out /root/backups/$(date +%Y%m%d)
 ```
 
 ---
 
-## Resumen de Puertos y URLs
+## Que se instala y donde (nada toca otros sitios)
 
-| Componente | Puerto | URL |
-|-----------|--------|-----|
-| Frontend | 443 (HTTPS via Plesk) | https://tramilex.goroky.es |
-| Backend API | 8001 (interno) | https://tramilex.goroky.es/api/ |
-| MongoDB | 27017 (localhost) | mongodb://localhost:27017 |
-
-## Credenciales
-
-| Rol | Email | Password |
-|-----|-------|----------|
-| Admin principal | malcsfuz@tramilex.es | Admin123! |
-| Soporte (oculto) | soporte@goroky.com | Ed$2526759 |
-
----
-
-## Solucion de Problemas
-
-### El frontend muestra pagina en blanco
-- Verifica que los archivos de `build/` estan en el document root
-- Verifica la directiva Nginx `try_files $uri $uri/ /index.html`
-
-### Error 502 Bad Gateway en /api/
-- El backend no esta corriendo: `sudo systemctl status tramilex-backend`
-- Reiniciar: `sudo systemctl restart tramilex-backend`
-- Ver logs: `sudo journalctl -u tramilex-backend -n 50`
-
-### Error de CORS
-- Verifica que CORS_ORIGINS en `.env` del backend tiene `https://tramilex.goroky.es`
-- Reiniciar backend despues de cambiar .env
-
-### MongoDB no conecta
-- Verifica que MongoDB esta corriendo: `sudo systemctl status mongod`
-- Verifica MONGO_URL en `.env` del backend
-
-### Subida de archivos falla
-- Verifica `client_max_body_size 15M;` en Nginx
-- Verifica que EMERGENT_LLM_KEY esta en `.env` del backend
+| Que | Donde | Afecta otros sitios? |
+|-----|-------|---------------------|
+| Codigo backend | /var/www/.../tramilex.goroky.es/app/backend/ | NO |
+| Python venv | /var/www/.../tramilex.goroky.es/app/backend/venv/ | NO |
+| Codigo frontend | /var/www/.../tramilex.goroky.es/app/frontend/ | NO |
+| Build compilado | /var/www/.../tramilex.goroky.es/ (document root) | NO |
+| Servicio systemd | /etc/systemd/system/tramilex-backend.service | NO (servicio independiente) |
+| Base de datos | MongoDB: base "tramilex_prod" | NO (base separada) |
+| Nginx config | Solo en directivas adicionales de tramilex.goroky.es | NO |
