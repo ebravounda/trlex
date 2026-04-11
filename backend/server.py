@@ -183,6 +183,10 @@ class DocumentStatusUpdate(BaseModel):
     status: str
 
 
+class DocumentRenameInput(BaseModel):
+    display_name: str
+
+
 class ChangePasswordInput(BaseModel):
     current_password: str
     new_password: str
@@ -346,6 +350,7 @@ async def get_my_documents(user=Depends(get_current_user)):
         result.append({
             "id": str(doc["_id"]),
             "original_filename": doc["original_filename"],
+            "display_name": doc.get("display_name", doc["original_filename"]),
             "content_type": doc.get("content_type", ""),
             "size": doc.get("size", 0),
             "status": doc["status"],
@@ -444,6 +449,25 @@ async def update_document_status(doc_id: str, body: DocumentStatusUpdate, user=D
     return {"message": "Estado actualizado", "status": body.status}
 
 
+@api_router.put("/documents/{doc_id}/rename")
+async def rename_document(doc_id: str, body: DocumentRenameInput, user=Depends(require_admin)):
+    display_name = body.display_name.strip()
+    if not display_name:
+        raise HTTPException(status_code=400, detail="El nombre no puede estar vacio")
+    try:
+        result = await db.documents.update_one(
+            {"_id": ObjectId(doc_id), "is_deleted": False},
+            {"$set": {"display_name": display_name}}
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    await log_audit("document_renamed", user["_id"], user.get("name", ""),
+                    {"doc_id": doc_id, "new_name": display_name})
+    return {"message": "Nombre actualizado", "display_name": display_name}
+
+
 # --- Clients Routes (Admin) ---
 @api_router.get("/clients")
 async def get_clients(
@@ -505,6 +529,7 @@ async def get_client_detail(client_id: str, user=Depends(require_admin)):
         doc_list.append({
             "id": str(doc["_id"]),
             "original_filename": doc["original_filename"],
+            "display_name": doc.get("display_name", doc["original_filename"]),
             "content_type": doc.get("content_type", ""),
             "size": doc.get("size", 0),
             "status": doc["status"],

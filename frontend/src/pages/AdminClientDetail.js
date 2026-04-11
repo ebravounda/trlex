@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Download, Trash2, MoreHorizontal, CheckCircle, Clock,
   Mail, Phone, MapPin, Globe, FileText, Image as ImageIcon, User,
-  Upload, Package, Tag, Eye, X
+  Upload, Package, Tag, Eye, X, Pencil
 } from 'lucide-react';
 
 const CATEGORY_LABELS = {
@@ -77,6 +77,8 @@ export default function AdminClientDetail() {
   const [downloading, setDownloading] = useState(false);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [renamingDoc, setRenamingDoc] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
   const fileInputRef = useRef(null);
 
   const fetchClient = useCallback(async () => {
@@ -160,6 +162,23 @@ export default function AdminClientDetail() {
     if (previewUrl) window.URL.revokeObjectURL(previewUrl);
     setPreviewDoc(null);
     setPreviewUrl(null);
+  };
+
+  const startRename = (doc) => {
+    setRenamingDoc(doc.id);
+    setRenameValue(doc.display_name || doc.original_filename);
+  };
+
+  const handleRename = async (docId) => {
+    if (!renameValue.trim()) return;
+    try {
+      await api.put(`/documents/${docId}/rename`, { display_name: renameValue.trim() });
+      toast.success('Nombre actualizado');
+      setRenamingDoc(null);
+      fetchClient();
+    } catch (err) {
+      toast.error('Error renombrando documento');
+    }
   };
 
   const handleDownload = async (doc) => {
@@ -341,11 +360,40 @@ export default function AdminClientDetail() {
                 {client.documents.map((doc) => (
                   <TableRow key={doc.id} className="hover:bg-slate-50 transition-colors">
                     <TableCell className="py-3 px-4">
-                      <div className="flex items-center gap-2.5">
+                      <div className="flex items-center gap-2">
                         {getFileIcon(doc.content_type)}
-                        <span className="text-sm font-medium text-slate-800 truncate max-w-[180px]" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
-                          {doc.original_filename}
-                        </span>
+                        {renamingDoc === doc.id ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={renameValue}
+                              onChange={e => setRenameValue(e.target.value)}
+                              onKeyDown={e => { if (e.key === 'Enter') handleRename(doc.id); if (e.key === 'Escape') setRenamingDoc(null); }}
+                              className="text-sm border border-slate-300 rounded px-2 py-1 w-44 focus:ring-1 focus:ring-slate-900 focus:border-slate-900 outline-none"
+                              autoFocus
+                              data-testid={`rename-input-${doc.id}`}
+                            />
+                            <button onClick={() => handleRename(doc.id)} className="text-emerald-600 hover:text-emerald-700" data-testid={`rename-save-${doc.id}`}>
+                              <CheckCircle className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setRenamingDoc(null)} className="text-slate-400 hover:text-slate-600" data-testid={`rename-cancel-${doc.id}`}>
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5 group/name">
+                            <span className="text-sm font-medium text-slate-800 truncate max-w-[180px]" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
+                              {doc.display_name || doc.original_filename}
+                            </span>
+                            <button
+                              onClick={() => startRename(doc)}
+                              className="text-slate-300 hover:text-slate-600 opacity-0 group-hover/name:opacity-100 transition-opacity"
+                              data-testid={`rename-btn-${doc.id}`}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
                       </div>
                     </TableCell>
                     <TableCell className="py-3 px-4">

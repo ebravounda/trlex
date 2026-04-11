@@ -15,6 +15,8 @@ const ACTION_LABELS = {
   admin_uploaded_document: { label: 'Admin subio documento', icon: Upload, color: 'bg-indigo-100 text-indigo-700 border-indigo-200' },
   smtp_updated: { label: 'SMTP actualizado', icon: Settings, color: 'bg-slate-100 text-slate-700 border-slate-200' },
   bulk_download: { label: 'Descarga masiva', icon: Download, color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
+  document_renamed: { label: 'Doc renombrado', icon: RefreshCw, color: 'bg-violet-100 text-violet-700 border-violet-200' },
+  password_changed: { label: 'Contrasena cambiada', icon: Settings, color: 'bg-slate-100 text-slate-700 border-slate-200' },
 };
 
 function formatDate(iso) {
@@ -30,6 +32,7 @@ function getDetailText(log) {
   if (d.category) parts.push(`Cat: ${d.category}`);
   if (d.client_name) parts.push(`Cliente: ${d.client_name}`);
   if (d.new_status) parts.push(`Estado: ${d.new_status === 'reviewed' ? 'Revisado' : 'Pendiente'}`);
+  if (d.new_name) parts.push(`Nuevo nombre: ${d.new_name}`);
   if (d.smtp_host) parts.push(`Host: ${d.smtp_host}`);
   return parts.join(' | ') || '-';
 }

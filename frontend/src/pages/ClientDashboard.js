@@ -248,7 +248,7 @@ export default function ClientDashboard() {
                         <div className="flex items-center gap-2.5">
                           {getFileIcon(doc.content_type)}
                           <span className="text-sm font-medium text-slate-800 truncate max-w-[180px]" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
-                            {doc.original_filename}
+                            {doc.display_name || doc.original_filename}
                           </span>
                         </div>
                       </TableCell>
