@@ -401,10 +401,39 @@ export default function AdminClientDetail() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               <InfoItem icon={Building2} label="Empresa" value={client.company_name} />
-              {client.workers && client.workers.map((w, idx) => (
-                w && <InfoItem key={idx} icon={User} label={`Trabajador ${idx + 1}`} value={w} />
-              ))}
+              <InfoItem icon={FileText} label="CIF/NIF" value={client.company_cif_nif} />
             </div>
+            {client.workers && client.workers.length > 0 && (
+              <div className="mt-4 space-y-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Trabajadores</p>
+                {client.workers.map((w, idx) => (
+                  <div key={idx} className="p-3 bg-slate-50 rounded-md border border-slate-200">
+                    {typeof w === 'object' ? (
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase">Nombre</p>
+                          <p className="text-sm text-slate-800 font-medium">{w.name || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase">RUT/DNI</p>
+                          <p className="text-sm text-slate-800" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>{w.rut_dni || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase">NIE</p>
+                          <p className="text-sm text-slate-800" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>{w.nie || '-'}</p>
+                        </div>
+                        <div>
+                          <p className="text-[10px] text-slate-400 uppercase">Pasaporte</p>
+                          <p className="text-sm text-slate-800" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>{w.passport || '-'}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-slate-800">{w}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </div>

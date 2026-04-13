@@ -45,7 +45,7 @@ export default function AuthPage() {
     name: '', email: '', password: '', nie: '', passport_number: '',
     phone: '', address: '', city: '', origin_country: '', residence_country: '',
     father_name: '', mother_name: '', children: [],
-    country: '', tramite_type: '', is_company: false, company_name: '', workers: []
+    country: '', tramite_type: '', is_company: false, company_name: '', company_cif_nif: '', workers: []
   });
   const [tramitesList, setTramitesList] = useState([]);
 
@@ -362,22 +362,35 @@ export default function AuthPage() {
 
                 {regForm.is_company && (
                   <div className="space-y-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
-                    <div>
-                      <Label className="text-slate-700 text-sm font-medium">Nombre de la empresa *</Label>
-                      <Input
-                        value={regForm.company_name}
-                        onChange={e => updateReg('company_name', e.target.value)}
-                        placeholder="Nombre de la empresa"
-                        className="mt-1.5 h-10 bg-white border-slate-300"
-                        data-testid="register-company-name-input"
-                      />
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div>
+                        <Label className="text-slate-700 text-sm font-medium">Nombre de la empresa *</Label>
+                        <Input
+                          value={regForm.company_name}
+                          onChange={e => updateReg('company_name', e.target.value)}
+                          placeholder="Nombre de la empresa"
+                          className="mt-1.5 h-10 bg-white border-slate-300"
+                          data-testid="register-company-name-input"
+                        />
+                      </div>
+                      <div>
+                        <Label className="text-slate-700 text-sm font-medium">CIF/NIF *</Label>
+                        <Input
+                          value={regForm.company_cif_nif}
+                          onChange={e => updateReg('company_cif_nif', e.target.value)}
+                          placeholder="B12345678"
+                          className="mt-1.5 h-10 bg-white border-slate-300"
+                          style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}
+                          data-testid="register-company-cif-input"
+                        />
+                      </div>
                     </div>
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
+                      <div className="flex items-center justify-between mb-2">
                         <Label className="text-slate-700 text-sm font-medium">Trabajadores para tramites de visado</Label>
                         <button
                           type="button"
-                          onClick={() => updateReg('workers', [...regForm.workers, ''])}
+                          onClick={() => updateReg('workers', [...regForm.workers, { name: '', nie: '', passport: '', rut_dni: '' }])}
                           className="flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 font-medium"
                           data-testid="add-worker-btn"
                         >
@@ -387,27 +400,69 @@ export default function AuthPage() {
                       {regForm.workers.length === 0 && (
                         <p className="text-xs text-slate-400">Pulsa "+ Agregar trabajador" para registrar trabajadores.</p>
                       )}
-                      <div className="space-y-2">
+                      <div className="space-y-3">
                         {regForm.workers.map((w, idx) => (
-                          <div key={idx} className="flex items-center gap-2">
-                            <Input
-                              value={w}
-                              onChange={e => {
-                                const updated = [...regForm.workers];
-                                updated[idx] = e.target.value;
-                                updateReg('workers', updated);
-                              }}
-                              placeholder={`Nombre completo trabajador ${idx + 1}`}
-                              className="h-10 bg-white border-slate-300 flex-1"
-                              data-testid={`register-worker-${idx}-input`}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => updateReg('workers', regForm.workers.filter((_, i) => i !== idx))}
-                              className="text-red-400 hover:text-red-600 p-1"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                          <div key={idx} className="p-3 bg-white rounded-md border border-slate-200 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Trabajador {idx + 1}</span>
+                              <button
+                                type="button"
+                                onClick={() => updateReg('workers', regForm.workers.filter((_, i) => i !== idx))}
+                                className="text-red-400 hover:text-red-600"
+                                data-testid={`remove-worker-${idx}-btn`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                              <Input
+                                value={w.name || ''}
+                                onChange={e => {
+                                  const updated = [...regForm.workers];
+                                  updated[idx] = { ...updated[idx], name: e.target.value };
+                                  updateReg('workers', updated);
+                                }}
+                                placeholder="Nombres y apellidos *"
+                                className="h-9 bg-white border-slate-300 text-sm"
+                                data-testid={`worker-${idx}-name`}
+                              />
+                              <Input
+                                value={w.rut_dni || ''}
+                                onChange={e => {
+                                  const updated = [...regForm.workers];
+                                  updated[idx] = { ...updated[idx], rut_dni: e.target.value };
+                                  updateReg('workers', updated);
+                                }}
+                                placeholder="RUT/DNI"
+                                className="h-9 bg-white border-slate-300 text-sm"
+                                style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}
+                                data-testid={`worker-${idx}-rut`}
+                              />
+                              <Input
+                                value={w.nie || ''}
+                                onChange={e => {
+                                  const updated = [...regForm.workers];
+                                  updated[idx] = { ...updated[idx], nie: e.target.value };
+                                  updateReg('workers', updated);
+                                }}
+                                placeholder="NIE (si tiene)"
+                                className="h-9 bg-white border-slate-300 text-sm"
+                                style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}
+                                data-testid={`worker-${idx}-nie`}
+                              />
+                              <Input
+                                value={w.passport || ''}
+                                onChange={e => {
+                                  const updated = [...regForm.workers];
+                                  updated[idx] = { ...updated[idx], passport: e.target.value };
+                                  updateReg('workers', updated);
+                                }}
+                                placeholder="N. Pasaporte"
+                                className="h-9 bg-white border-slate-300 text-sm"
+                                style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}
+                                data-testid={`worker-${idx}-passport`}
+                              />
+                            </div>
                           </div>
                         ))}
                       </div>

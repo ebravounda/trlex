@@ -177,7 +177,8 @@ class RegisterInput(BaseModel):
     tramite_type: str = ""
     is_company: bool = False
     company_name: str = ""
-    workers: List[str] = []
+    company_cif_nif: str = ""
+    workers: List[dict] = []
 
 
 class SMTPSettingsInput(BaseModel):
@@ -235,6 +236,7 @@ async def register(input_data: RegisterInput):
         "tramite_type": input_data.tramite_type,
         "is_company": input_data.is_company,
         "company_name": input_data.company_name,
+        "company_cif_nif": input_data.company_cif_nif,
         "workers": input_data.workers,
         "role": "client",
         "created_at": datetime.now(timezone.utc).isoformat()
@@ -682,10 +684,17 @@ async def generate_ficha_pdf(client_id: str, user=Depends(require_admin)):
         pdf.ln(4)
         add_section("Datos de Empresa")
         add_field("Nombre empresa", client.get("company_name", ""))
+        add_field("CIF/NIF", client.get("company_cif_nif", ""))
         workers = client.get("workers", [])
         if workers:
             for i, w in enumerate(workers, 1):
-                if w:
+                if isinstance(w, dict):
+                    add_field(f"--- Trabajador {i} ---", "")
+                    add_field("  Nombre", w.get("name", ""))
+                    add_field("  NIE", w.get("nie", ""))
+                    add_field("  Pasaporte", w.get("passport", ""))
+                    add_field("  RUT/DNI", w.get("rut_dni", ""))
+                elif w:
                     add_field(f"Trabajador {i}", w)
     pdf.ln(4)
 
