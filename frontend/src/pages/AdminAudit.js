@@ -17,6 +17,7 @@ const ACTION_LABELS = {
   bulk_download: { label: 'Descarga masiva', icon: Download, color: 'bg-emerald-100 text-emerald-700 border-emerald-200' },
   document_renamed: { label: 'Doc renombrado', icon: RefreshCw, color: 'bg-violet-100 text-violet-700 border-violet-200' },
   password_changed: { label: 'Contrasena cambiada', icon: Settings, color: 'bg-slate-100 text-slate-700 border-slate-200' },
+  email_sent: { label: 'Email enviado', icon: Download, color: 'bg-sky-100 text-sky-700 border-sky-200' },
 };
 
 function formatDate(iso) {

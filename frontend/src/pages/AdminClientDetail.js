@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Download, Trash2, MoreHorizontal, CheckCircle, Clock,
   Mail, Phone, MapPin, Globe, FileText, Image as ImageIcon, User,
-  Upload, Package, Tag, Eye, X, Pencil, FileDown, Users
+  Upload, Package, Tag, Eye, X, Pencil, FileDown, Users, Mail as MailIcon, Building2, Globe2, Send
 } from 'lucide-react';
 
 const CATEGORY_LABELS = {
@@ -79,6 +79,10 @@ export default function AdminClientDetail() {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [renamingDoc, setRenamingDoc] = useState(null);
   const [renameValue, setRenameValue] = useState('');
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [emailMessage, setEmailMessage] = useState('');
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [tramiteInfo, setTramiteInfo] = useState(null);
   const fileInputRef = useRef(null);
 
   const fetchClient = useCallback(async () => {
@@ -96,6 +100,29 @@ export default function AdminClientDetail() {
   useEffect(() => {
     fetchClient();
   }, [fetchClient]);
+
+  useEffect(() => {
+    if (client?.country && client?.tramite_type) {
+      api.get(`/tramites/${client.country}/${client.tramite_type}`).then(res => {
+        setTramiteInfo(res.data);
+      }).catch(() => setTramiteInfo(null));
+    }
+  }, [client?.country, client?.tramite_type]);
+
+  const handleSendEmail = async () => {
+    if (!emailMessage.trim()) { toast.error('Escribe un mensaje'); return; }
+    setSendingEmail(true);
+    try {
+      await api.post(`/clients/${clientId}/email`, { message: emailMessage });
+      toast.success('Email enviado al cliente');
+      setEmailOpen(false);
+      setEmailMessage('');
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Error enviando email');
+    } finally {
+      setSendingEmail(false);
+    }
+  };
 
   const handleAdminUpload = async (files) => {
     if (!files || files.length === 0) return;
@@ -270,7 +297,17 @@ export default function AdminClientDetail() {
               Registrado el {formatDate(client.created_at)}
             </p>
           </div>
-          <div className="ml-auto">
+          <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 text-slate-600"
+              onClick={() => setEmailOpen(true)}
+              data-testid="send-email-btn"
+            >
+              <Send className="w-4 h-4" />
+              Enviar email
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -279,7 +316,7 @@ export default function AdminClientDetail() {
               data-testid="download-ficha-btn"
             >
               <FileDown className="w-4 h-4" />
-              Descargar Ficha PDF
+              Ficha PDF
             </Button>
           </div>
         </div>
@@ -307,6 +344,65 @@ export default function AdminClientDetail() {
               <InfoItem icon={User} label="Nombre de la madre" value={client.mother_name} />
               {client.children && client.children.map((child, idx) => (
                 child && <InfoItem key={idx} icon={User} label={`Hijo/a ${idx + 1}`} value={child} />
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tramite Info */}
+        {client.country && (
+          <div className="mt-6 pt-6 border-t border-slate-200">
+            <div className="flex items-center gap-2 mb-4">
+              <Globe className="w-4 h-4 text-slate-500" strokeWidth={1.5} />
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Tramite Solicitado</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <InfoItem icon={Globe} label="Pais del tramite" value={client.country === 'chile' ? 'Chile' : client.country === 'espana' ? 'Espana' : client.country} />
+              <InfoItem icon={FileText} label="Tramite" value={tramiteInfo?.name || client.tramite_type} />
+            </div>
+            {tramiteInfo && (tramiteInfo.docs_persona?.length > 0 || tramiteInfo.docs_empresa?.length > 0) && (
+              <div className="mt-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-500 mb-3">Documentos requeridos para este tramite</p>
+                {tramiteInfo.docs_persona?.length > 0 && (
+                  <div className="mb-3">
+                    <p className="text-xs font-semibold text-slate-600 mb-1">Documentos personales:</p>
+                    <ul className="space-y-1">
+                      {tramiteInfo.docs_persona.map((d, i) => (
+                        <li key={i} className="text-xs text-slate-500 flex items-start gap-1.5">
+                          <span className="text-sky-500 mt-0.5">-</span> {d}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {tramiteInfo.docs_empresa?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-slate-600 mb-1">Documentos empresa:</p>
+                    <ul className="space-y-1">
+                      {tramiteInfo.docs_empresa.map((d, i) => (
+                        <li key={i} className="text-xs text-slate-500 flex items-start gap-1.5">
+                          <span className="text-sky-500 mt-0.5">-</span> {d}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Company Info */}
+        {client.is_company && (
+          <div className="mt-6 pt-6 border-t border-slate-200">
+            <div className="flex items-center gap-2 mb-4">
+              <Building2 className="w-4 h-4 text-slate-500" strokeWidth={1.5} />
+              <p className="text-xs font-bold uppercase tracking-wider text-slate-400">Datos de Empresa</p>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <InfoItem icon={Building2} label="Empresa" value={client.company_name} />
+              {client.workers && client.workers.map((w, idx) => (
+                w && <InfoItem key={idx} icon={User} label={`Trabajador ${idx + 1}`} value={w} />
               ))}
             </div>
           </div>
@@ -551,6 +647,48 @@ export default function AdminClientDetail() {
           </div>
         )}
       </div>
+
+      {/* Email Dialog */}
+      <Dialog open={emailOpen} onOpenChange={setEmailOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-base font-semibold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>
+              Enviar email a {client?.name}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 pt-2">
+            <div>
+              <p className="text-xs text-slate-500 mb-1">Destinatario: <span className="font-medium text-slate-700">{client?.email}</span></p>
+              <p className="text-xs text-slate-500">Asunto: <span className="font-medium text-slate-700">Nueva notificacion de Tramilex</span></p>
+            </div>
+            <div>
+              <label className="text-sm font-medium text-slate-700 block mb-1.5">Mensaje</label>
+              <textarea
+                value={emailMessage}
+                onChange={e => setEmailMessage(e.target.value)}
+                placeholder="Escribe el mensaje para el cliente..."
+                className="w-full h-32 px-3 py-2 text-sm border border-slate-300 rounded-md bg-white resize-none focus:ring-2 focus:ring-slate-900 focus:border-slate-900 outline-none"
+                data-testid="email-message-input"
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" size="sm" onClick={() => setEmailOpen(false)} data-testid="email-cancel-btn">
+                Cancelar
+              </Button>
+              <Button
+                size="sm"
+                className="bg-slate-900 hover:bg-slate-800 text-white gap-2"
+                onClick={handleSendEmail}
+                disabled={sendingEmail}
+                data-testid="email-send-btn"
+              >
+                <Send className="w-3.5 h-3.5" />
+                {sendingEmail ? 'Enviando...' : 'Enviar email'}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Preview Dialog */}
       <Dialog open={!!previewDoc} onOpenChange={(open) => { if (!open) closePreview(); }}>

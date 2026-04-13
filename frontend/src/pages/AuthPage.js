@@ -1,12 +1,13 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
-import { Eye, EyeOff, Plus, Trash2 } from 'lucide-react';
+import { Eye, EyeOff, Plus, Trash2, Building2, User } from 'lucide-react';
 
 const LOGO_URL = "https://tramilex.es/wp-content/uploads/2024/07/logo-tramilex-v3-1.jpg";
 const BG_URL = "https://images.unsplash.com/photo-1567030561392-0e0691af044b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBjb3Jwb3JhdGUlMjBvZmZpY2UlMjBidWlsZGluZyUyMG1pbmltYWwlMjBsaWdodHxlbnwwfHx8fDE3NzU5Mjg0NzB8MA&ixlib=rb-4.1.0&q=85";
@@ -43,8 +44,20 @@ export default function AuthPage() {
   const [regForm, setRegForm] = useState({
     name: '', email: '', password: '', nie: '', passport_number: '',
     phone: '', address: '', city: '', origin_country: '', residence_country: '',
-    father_name: '', mother_name: '', children: []
+    father_name: '', mother_name: '', children: [],
+    country: '', tramite_type: '', is_company: false, company_name: '', workers: []
   });
+  const [tramitesList, setTramitesList] = useState([]);
+
+  useEffect(() => {
+    if (regForm.country) {
+      api.get(`/tramites?country=${regForm.country}`).then(res => {
+        setTramitesList(res.data);
+      }).catch(() => setTramitesList([]));
+    } else {
+      setTramitesList([]);
+    }
+  }, [regForm.country]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -290,6 +303,117 @@ export default function AuthPage() {
                     </Select>
                   </div>
                 </div>
+
+                {/* Pais y Tramite */}
+                <div className="pt-2 border-t border-slate-200">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">Pais y tramite</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-slate-700 text-sm font-medium">Donde realizaras tu tramite? *</Label>
+                    <Select value={regForm.country} onValueChange={v => { updateReg('country', v); updateReg('tramite_type', ''); }}>
+                      <SelectTrigger className="mt-1.5 h-10 bg-white border-slate-300" data-testid="register-country-select">
+                        <SelectValue placeholder="Seleccionar pais" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="chile">Chile</SelectItem>
+                        <SelectItem value="espana">Espana</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label className="text-slate-700 text-sm font-medium">Tramite a solicitar *</Label>
+                    <Select value={regForm.tramite_type} onValueChange={v => updateReg('tramite_type', v)} disabled={!regForm.country}>
+                      <SelectTrigger className="mt-1.5 h-10 bg-white border-slate-300" data-testid="register-tramite-select">
+                        <SelectValue placeholder={regForm.country ? "Seleccionar tramite" : "Selecciona pais primero"} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {tramitesList.map(t => (
+                          <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {/* Tipo: Persona o Empresa */}
+                <div>
+                  <Label className="text-slate-700 text-sm font-medium mb-2 block">Tipo de registro</Label>
+                  <div className="flex gap-3">
+                    <button
+                      type="button"
+                      onClick={() => updateReg('is_company', false)}
+                      className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-md border text-sm font-medium transition-colors ${!regForm.is_company ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+                      data-testid="register-persona-btn"
+                    >
+                      <User className="w-4 h-4" /> Persona
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateReg('is_company', true)}
+                      className={`flex-1 flex items-center justify-center gap-2 h-10 rounded-md border text-sm font-medium transition-colors ${regForm.is_company ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+                      data-testid="register-empresa-btn"
+                    >
+                      <Building2 className="w-4 h-4" /> Empresa
+                    </button>
+                  </div>
+                </div>
+
+                {regForm.is_company && (
+                  <div className="space-y-4 p-4 bg-slate-50 rounded-lg border border-slate-200">
+                    <div>
+                      <Label className="text-slate-700 text-sm font-medium">Nombre de la empresa *</Label>
+                      <Input
+                        value={regForm.company_name}
+                        onChange={e => updateReg('company_name', e.target.value)}
+                        placeholder="Nombre de la empresa"
+                        className="mt-1.5 h-10 bg-white border-slate-300"
+                        data-testid="register-company-name-input"
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <Label className="text-slate-700 text-sm font-medium">Trabajadores para tramites de visado</Label>
+                        <button
+                          type="button"
+                          onClick={() => updateReg('workers', [...regForm.workers, ''])}
+                          className="flex items-center gap-1 text-xs text-sky-600 hover:text-sky-700 font-medium"
+                          data-testid="add-worker-btn"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Agregar trabajador
+                        </button>
+                      </div>
+                      {regForm.workers.length === 0 && (
+                        <p className="text-xs text-slate-400">Pulsa "+ Agregar trabajador" para registrar trabajadores.</p>
+                      )}
+                      <div className="space-y-2">
+                        {regForm.workers.map((w, idx) => (
+                          <div key={idx} className="flex items-center gap-2">
+                            <Input
+                              value={w}
+                              onChange={e => {
+                                const updated = [...regForm.workers];
+                                updated[idx] = e.target.value;
+                                updateReg('workers', updated);
+                              }}
+                              placeholder={`Nombre completo trabajador ${idx + 1}`}
+                              className="h-10 bg-white border-slate-300 flex-1"
+                              data-testid={`register-worker-${idx}-input`}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => updateReg('workers', regForm.workers.filter((_, i) => i !== idx))}
+                              className="text-red-400 hover:text-red-600 p-1"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Datos familiares */}
                 <div className="pt-2 border-t border-slate-200">

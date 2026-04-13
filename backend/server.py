@@ -23,6 +23,7 @@ import zipfile
 import io
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
+from tramites_data import TRAMITES, get_tramites_by_country, get_tramite_docs
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -172,6 +173,11 @@ class RegisterInput(BaseModel):
     father_name: str = ""
     mother_name: str = ""
     children: List[str] = []
+    country: str = ""
+    tramite_type: str = ""
+    is_company: bool = False
+    company_name: str = ""
+    workers: List[str] = []
 
 
 class SMTPSettingsInput(BaseModel):
@@ -194,6 +200,10 @@ class DocumentRenameInput(BaseModel):
 class ChangePasswordInput(BaseModel):
     current_password: str
     new_password: str
+
+
+class SendEmailInput(BaseModel):
+    message: str
 
 
 # --- Auth Routes ---
@@ -221,6 +231,11 @@ async def register(input_data: RegisterInput):
         "father_name": input_data.father_name,
         "mother_name": input_data.mother_name,
         "children": input_data.children,
+        "country": input_data.country,
+        "tramite_type": input_data.tramite_type,
+        "is_company": input_data.is_company,
+        "company_name": input_data.company_name,
+        "workers": input_data.workers,
         "role": "client",
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -652,6 +667,28 @@ async def generate_ficha_pdf(client_id: str, user=Depends(require_admin)):
                 add_field(f"Hijo/a {i}", child)
     pdf.ln(4)
 
+    # Tramite
+    add_section("Tramite Solicitado")
+    country_label = "Chile" if client.get("country") == "chile" else "Espana" if client.get("country") == "espana" else client.get("country", "")
+    add_field("Pais del tramite", country_label)
+    tramite_info = get_tramite_docs(client.get("country", ""), client.get("tramite_type", ""))
+    if tramite_info:
+        add_field("Tramite", tramite_info["name"])
+    else:
+        add_field("Tramite", client.get("tramite_type", ""))
+
+    # Empresa
+    if client.get("is_company"):
+        pdf.ln(4)
+        add_section("Datos de Empresa")
+        add_field("Nombre empresa", client.get("company_name", ""))
+        workers = client.get("workers", [])
+        if workers:
+            for i, w in enumerate(workers, 1):
+                if w:
+                    add_field(f"Trabajador {i}", w)
+    pdf.ln(4)
+
     # Registro
     add_section("Informacion del Registro")
     add_field("Fecha de registro", client.get("created_at", "")[:10] if client.get("created_at") else "")
@@ -829,6 +866,48 @@ async def get_audit_logs(
     }
 
 
+# --- Tramites Routes ---
+@api_router.get("/tramites")
+async def get_tramites(country: str = ""):
+    if country:
+        return get_tramites_by_country(country)
+    result = {}
+    for c in TRAMITES:
+        result[c] = {"label": TRAMITES[c]["label"], "tramites": get_tramites_by_country(c)}
+    return result
+
+
+@api_router.get("/tramites/{country}/{tramite_id}")
+async def get_tramite_detail(country: str, tramite_id: str):
+    docs = get_tramite_docs(country, tramite_id)
+    if not docs:
+        raise HTTPException(status_code=404, detail="Tramite no encontrado")
+    return docs
+
+
+# --- Admin Send Email to Client ---
+@api_router.post("/clients/{client_id}/email")
+async def send_email_to_client(client_id: str, body: SendEmailInput, background_tasks: BackgroundTasks, user=Depends(require_admin)):
+    try:
+        client = await db.users.find_one({"_id": ObjectId(client_id), "role": "client"}, {"password_hash": 0})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    if not client.get("email"):
+        raise HTTPException(status_code=400, detail="El cliente no tiene email registrado")
+
+    background_tasks.add_task(
+        send_admin_email_to_client,
+        client["email"],
+        client.get("name", "Cliente"),
+        body.message
+    )
+    await log_audit("email_sent", user["_id"], user.get("name", ""),
+                    {"client_id": client_id, "client_name": client.get("name", ""), "client_email": client["email"]})
+    return {"message": "Email enviado correctamente"}
+
+
 # --- Settings Routes ---
 @api_router.get("/settings/smtp")
 async def get_smtp_settings(user=Depends(require_admin)):
@@ -991,6 +1070,49 @@ def send_status_notification(client_email: str, client_name: str, filename: str,
         logger.info(f"Notificacion de estado enviada a {client_name} ({client_email})")
     except Exception as e:
         logger.error(f"Error enviando notificacion de estado: {e}")
+
+
+# --- Admin email to client ---
+def send_admin_email_to_client(client_email: str, client_name: str, message: str):
+    try:
+        import pymongo
+        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
+        sync_db = sync_client[os.environ['DB_NAME']]
+        settings = sync_db.settings.find_one({"type": "smtp"})
+        sync_client.close()
+
+        if not settings or not settings.get("smtp_host"):
+            logger.info("SMTP no configurado, email al cliente omitido")
+            return
+
+        msg = MIMEMultipart()
+        msg["From"] = settings["from_email"]
+        msg["To"] = client_email
+        msg["Subject"] = "Nueva notificacion de Tramilex"
+
+        body = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0f172a;">Nueva notificacion de Tramilex</h2>
+            <p>Hola <strong>{client_name}</strong>,</p>
+            <div style="background: #f8fafc; border-left: 4px solid #0284c7; padding: 16px; margin: 16px 0; border-radius: 4px;">
+                {message.replace(chr(10), '<br>')}
+            </div>
+            <p style="color: #64748b; font-size: 12px; margin-top: 24px;">
+                Este mensaje fue enviado por tu abogado a traves de Tramilex.<br>
+                No respondas a este correo directamente.
+            </p>
+        </div>
+        """
+        msg.attach(MIMEText(body, "html"))
+
+        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
+        server.starttls()
+        server.login(settings["smtp_user"], settings["smtp_password"])
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"Email enviado a {client_name} ({client_email})")
+    except Exception as e:
+        logger.error(f"Error enviando email al cliente: {e}")
 
 
 # --- Startup ---

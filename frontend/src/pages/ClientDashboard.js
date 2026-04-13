@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Upload, Download, LogOut, FileText, Image as ImageIcon, Clock, Tag } from 'lucide-react';
+import { Upload, Download, LogOut, FileText, Image as ImageIcon, Clock, Tag, ClipboardList } from 'lucide-react';
 
 const LOGO_URL = "https://tramilex.es/wp-content/uploads/2024/07/logo-tramilex-v3-1.jpg";
 
@@ -50,6 +50,7 @@ export default function ClientDashboard() {
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('otros');
+  const [tramiteInfo, setTramiteInfo] = useState(null);
   const fileInputRef = useRef(null);
 
   const fetchDocuments = useCallback(async () => {
@@ -64,6 +65,14 @@ export default function ClientDashboard() {
   useEffect(() => {
     fetchDocuments();
   }, [fetchDocuments]);
+
+  useEffect(() => {
+    if (user?.country && user?.tramite_type) {
+      api.get(`/tramites/${user.country}/${user.tramite_type}`).then(res => {
+        setTramiteInfo(res.data);
+      }).catch(() => {});
+    }
+  }, [user?.country, user?.tramite_type]);
 
   const handleUpload = async (files) => {
     if (!files || files.length === 0) return;
@@ -156,6 +165,47 @@ export default function ClientDashboard() {
       </header>
 
       <main className="max-w-5xl mx-auto px-6 py-8 md:py-12 space-y-8">
+        {/* Required Documents Info */}
+        {tramiteInfo && (
+          <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center">
+                <ClipboardList className="w-4 h-4 text-sky-600" strokeWidth={1.5} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-slate-800" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                  {tramiteInfo.name}
+                </p>
+                <p className="text-xs text-slate-500">Documentos que necesitas subir para tu tramite</p>
+              </div>
+            </div>
+            {tramiteInfo.docs_persona?.length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Documentos personales</p>
+                <ul className="space-y-1.5">
+                  {tramiteInfo.docs_persona.map((d, i) => (
+                    <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
+                      <span className="text-sky-500 mt-0.5 font-bold">-</span> {d}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {tramiteInfo.docs_empresa?.length > 0 && (
+              <div>
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Documentos empresa</p>
+                <ul className="space-y-1.5">
+                  {tramiteInfo.docs_empresa.map((d, i) => (
+                    <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
+                      <span className="text-sky-500 mt-0.5 font-bold">-</span> {d}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Category Select + Upload Zone */}
         <div className="space-y-3">
           <div className="flex items-center gap-3">
