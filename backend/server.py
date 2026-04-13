@@ -878,17 +878,26 @@ async def get_audit_logs(
 # --- Custom Tramites (Admin CRUD) ---
 @api_router.get("/admin/tramites")
 async def get_all_tramites_admin(user=Depends(require_admin)):
+    overrides = {}
+    override_list = await db.tramite_overrides.find({}).to_list(1000)
+    for o in override_list:
+        overrides[f"{o['country']}_{o['tramite_id']}"] = o
+
     static = []
     for country_key, country_data in TRAMITES.items():
         for t in country_data["tramites"]:
+            key = f"{country_key}_{t['id']}"
+            ov = overrides.get(key)
             static.append({
                 "id": t["id"],
                 "name": t["name"],
                 "country": country_key,
                 "country_label": country_data["label"],
-                "docs_persona": t.get("docs_persona", []),
-                "docs_empresa": t.get("docs_empresa", []),
-                "source": "sistema"
+                "requirements": ov.get("requirements", []) if ov else [],
+                "docs_persona": ov.get("docs_persona", t.get("docs_persona", [])) if ov else t.get("docs_persona", []),
+                "docs_empresa": ov.get("docs_empresa", t.get("docs_empresa", [])) if ov else t.get("docs_empresa", []),
+                "source": "sistema",
+                "has_override": bool(ov)
             })
 
     custom = await db.custom_tramites.find({"is_deleted": {"$ne": True}}).sort("created_at", -1).to_list(1000)
@@ -946,6 +955,45 @@ async def delete_custom_tramite(tramite_id: str, user=Depends(require_admin)):
     return {"message": "Tramite eliminado"}
 
 
+@api_router.put("/admin/tramites/{tramite_id}/edit")
+async def edit_tramite(tramite_id: str, request: Request, user=Depends(require_admin)):
+    body = await request.json()
+    country = body.get("country", "")
+    source = body.get("source", "")
+    requirements = body.get("requirements", [])
+    docs_persona = body.get("docs_persona", [])
+    docs_empresa = body.get("docs_empresa", [])
+
+    clean_reqs = [r for r in requirements if r.strip()]
+    clean_docs_p = [d for d in docs_persona if d.strip()]
+    clean_docs_e = [d for d in docs_empresa if d.strip()]
+
+    if source == "personalizado":
+        try:
+            await db.custom_tramites.update_one(
+                {"_id": ObjectId(tramite_id)},
+                {"$set": {"requirements": clean_reqs, "docs_persona": clean_docs_p, "docs_empresa": clean_docs_e}}
+            )
+        except Exception:
+            raise HTTPException(status_code=404, detail="Tramite no encontrado")
+    else:
+        await db.tramite_overrides.update_one(
+            {"tramite_id": tramite_id, "country": country},
+            {"$set": {
+                "tramite_id": tramite_id,
+                "country": country,
+                "requirements": clean_reqs,
+                "docs_persona": clean_docs_p,
+                "docs_empresa": clean_docs_e,
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }},
+            upsert=True
+        )
+
+    await log_audit("tramite_edited", user["_id"], user.get("name", ""), {"tramite_id": tramite_id})
+    return {"message": "Tramite actualizado"}
+
+
 # --- Tramites Routes (public, includes custom) ---
 @api_router.get("/tramites")
 async def get_tramites(country: str = ""):
@@ -965,8 +1013,24 @@ async def get_tramites(country: str = ""):
 
 @api_router.get("/tramites/{country}/{tramite_id}")
 async def get_tramite_detail(country: str, tramite_id: str):
+    # Check for admin override first
+    override = await db.tramite_overrides.find_one(
+        {"tramite_id": tramite_id, "country": country}, {"_id": 0}
+    )
+    if override:
+        base = get_tramite_docs(country, tramite_id)
+        name = base["name"] if base else override.get("name", tramite_id)
+        return {
+            "id": tramite_id,
+            "name": name,
+            "requirements": override.get("requirements", []),
+            "docs_persona": override.get("docs_persona", base.get("docs_persona", []) if base else []),
+            "docs_empresa": override.get("docs_empresa", base.get("docs_empresa", []) if base else []),
+        }
+
     docs = get_tramite_docs(country, tramite_id)
     if docs:
+        docs["requirements"] = docs.get("requirements", [])
         return docs
     try:
         custom = await db.custom_tramites.find_one({"_id": ObjectId(tramite_id), "is_deleted": {"$ne": True}})

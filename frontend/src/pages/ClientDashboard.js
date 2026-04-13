@@ -179,6 +179,18 @@ export default function ClientDashboard() {
                 <p className="text-xs text-slate-500">Documentos que necesitas subir para tu tramite</p>
               </div>
             </div>
+            {tramiteInfo?.requirements?.length > 0 && (
+              <div className="mb-3">
+                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Requisitos</p>
+                <ul className="space-y-1.5">
+                  {tramiteInfo.requirements.map((r, i) => (
+                    <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
+                      <span className="text-emerald-500 mt-0.5 font-bold">-</span> {r}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {tramiteInfo.docs_persona?.length > 0 && (
               <div className="mb-3">
                 <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Documentos personales</p>
