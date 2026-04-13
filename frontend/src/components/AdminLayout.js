@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { Users, Settings, LogOut, Menu, X, ClipboardList } from 'lucide-react';
+import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 
@@ -8,6 +8,8 @@ const LOGO_URL = "https://tramilex.es/wp-content/uploads/2024/07/logo-tramilex-v
 
 const navItems = [
   { to: '/admin/clients', label: 'Clientes', icon: Users },
+  { to: '/admin/tramites', label: 'Tramites', icon: FileText },
+  { to: '/admin/email', label: 'Enviar correo', icon: Mail },
   { to: '/admin/audit', label: 'Auditoria', icon: ClipboardList },
   { to: '/admin/settings', label: 'Configuracion', icon: Settings },
 ];

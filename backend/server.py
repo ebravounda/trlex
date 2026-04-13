@@ -875,11 +875,88 @@ async def get_audit_logs(
     }
 
 
-# --- Tramites Routes ---
+# --- Custom Tramites (Admin CRUD) ---
+@api_router.get("/admin/tramites")
+async def get_all_tramites_admin(user=Depends(require_admin)):
+    static = []
+    for country_key, country_data in TRAMITES.items():
+        for t in country_data["tramites"]:
+            static.append({
+                "id": t["id"],
+                "name": t["name"],
+                "country": country_key,
+                "country_label": country_data["label"],
+                "docs_persona": t.get("docs_persona", []),
+                "docs_empresa": t.get("docs_empresa", []),
+                "source": "sistema"
+            })
+
+    custom = await db.custom_tramites.find({"is_deleted": {"$ne": True}}).sort("created_at", -1).to_list(1000)
+    for t in custom:
+        t["id"] = str(t.pop("_id"))
+        t["source"] = "personalizado"
+
+    return static + custom
+
+
+@api_router.post("/admin/tramites")
+async def create_custom_tramite(request: Request, user=Depends(require_admin)):
+    body = await request.json()
+    name = body.get("name", "").strip()
+    country = body.get("country", "")
+    requirements = body.get("requirements", [])
+    docs_persona = body.get("docs_persona", [])
+    docs_empresa = body.get("docs_empresa", [])
+
+    if not name or not country:
+        raise HTTPException(status_code=400, detail="Nombre y pais son obligatorios")
+
+    tramite_id = name.lower().replace(" ", "_")[:50]
+
+    doc = {
+        "tramite_id": tramite_id,
+        "name": name,
+        "country": country,
+        "country_label": "Chile" if country == "chile" else "Espana",
+        "requirements": [r for r in requirements if r.strip()],
+        "docs_persona": [d for d in docs_persona if d.strip()],
+        "docs_empresa": [d for d in docs_empresa if d.strip()],
+        "is_deleted": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.custom_tramites.insert_one(doc)
+
+    await log_audit("tramite_created", user["_id"], user.get("name", ""), {"tramite_name": name, "country": country})
+
+    return {"id": str(result.inserted_id), "name": name, "message": "Tramite creado"}
+
+
+@api_router.delete("/admin/tramites/{tramite_id}")
+async def delete_custom_tramite(tramite_id: str, user=Depends(require_admin)):
+    try:
+        result = await db.custom_tramites.update_one(
+            {"_id": ObjectId(tramite_id)},
+            {"$set": {"is_deleted": True}}
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Tramite no encontrado")
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Tramite no encontrado")
+    await log_audit("tramite_deleted", user["_id"], user.get("name", ""), {"tramite_id": tramite_id})
+    return {"message": "Tramite eliminado"}
+
+
+# --- Tramites Routes (public, includes custom) ---
 @api_router.get("/tramites")
 async def get_tramites(country: str = ""):
     if country:
-        return get_tramites_by_country(country)
+        static_list = get_tramites_by_country(country)
+        custom = await db.custom_tramites.find(
+            {"country": country, "is_deleted": {"$ne": True}}
+        ).to_list(1000)
+        for t in custom:
+            static_list.append({"id": str(t["_id"]), "name": t["name"]})
+        return static_list
     result = {}
     for c in TRAMITES:
         result[c] = {"label": TRAMITES[c]["label"], "tramites": get_tramites_by_country(c)}
@@ -889,9 +966,21 @@ async def get_tramites(country: str = ""):
 @api_router.get("/tramites/{country}/{tramite_id}")
 async def get_tramite_detail(country: str, tramite_id: str):
     docs = get_tramite_docs(country, tramite_id)
-    if not docs:
-        raise HTTPException(status_code=404, detail="Tramite no encontrado")
-    return docs
+    if docs:
+        return docs
+    try:
+        custom = await db.custom_tramites.find_one({"_id": ObjectId(tramite_id), "is_deleted": {"$ne": True}})
+        if custom:
+            return {
+                "id": str(custom["_id"]),
+                "name": custom["name"],
+                "requirements": custom.get("requirements", []),
+                "docs_persona": custom.get("docs_persona", []),
+                "docs_empresa": custom.get("docs_empresa", []),
+            }
+    except Exception:
+        pass
+    raise HTTPException(status_code=404, detail="Tramite no encontrado")
 
 
 # --- Admin Send Email to Client ---
