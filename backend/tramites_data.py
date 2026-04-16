@@ -152,7 +152,7 @@ TRAMITES = {
         "tramites": [
             {
                 "id": "regularizacion_extraordinaria",
-                "name": "Regularizacion Extraordinaria (Arraigo)",
+                "name": "Regularizacion Extraordinaria 2026",
                 "docs_persona": [
                     "Pasaporte completo (vigente o caducado) o documento de identidad valido",
                     "Acreditacion de presencia ininterrumpida en Espana durante 5 meses previos a la solicitud",
