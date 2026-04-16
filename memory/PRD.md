@@ -1,60 +1,70 @@
-# Tramilex - Immigration Document Management System
+# Tramilex - Sistema de Gestion Documental para Inmigracin
 
-## Original Problem Statement
-Sistema para abogado de inmigracion donde clientes con pasaporte y NIE pueden registrarse y subir documentos en PDF o imagenes. El abogado descarga documentos en panel admin con fecha/hora de carga, datos del usuario (NIE, Pasaporte, correo, telefono, direccion, ciudad, pais de origen, pais de residencia). Gestion de estados de documentos, filtros por pais/NIE/pasaporte, configuracion SMTP para notificaciones email.
+## Problema Original
+Sistema para un abogado de inmigracion donde los clientes puedan registrarse con pasaporte/NIE, subir documentos (PDF/imagenes), y el abogado pueda gestionar todo desde un panel admin.
 
-## Architecture
-- Backend: FastAPI + MongoDB (motor async)
+## Stack Tecnico
 - Frontend: React + Tailwind CSS + Shadcn UI
-- File Storage: Emergent Object Storage
-- Auth: JWT Bearer tokens + bcrypt password hashing
-- Email: SMTP configurable by admin
+- Backend: FastAPI + Motor (async MongoDB)
+- DB: MongoDB
+- Storage: Emergent Object Storage
+- PDF: fpdf2
 
-## User Personas
-1. **Cliente** - Persona que necesita subir documentos de inmigracion
-2. **Abogado/Admin** - Profesional que gestiona documentos y casos
+## Funcionalidades Implementadas
 
-## Core Requirements
-- [x] Client registration with NIE/Passport/personal data
-- [x] Document upload (PDF/images) with original filenames
-- [x] Admin panel to view/manage clients and documents
-- [x] Document status management (Pendiente de revision / Revisado)
-- [x] Document download and deletion
-- [x] SMTP configuration for email notifications
-- [x] Client filtering (country, NIE, passport, name, email)
-- [x] Auto-delete documents when deleting client
+### Autenticacion
+- JWT con bcrypt
+- Registro extendido (datos personales, familia, empresa)
+- Impersonacion de clientes por admin
+- Doble cuenta admin (malcafuz@tramilex.es, soporte@goroky.com)
 
-## What's Been Implemented (Feb 2026)
-- Full auth system (JWT + bcrypt + admin seeding)
-- Client registration with all personal data fields
-- Document upload to Emergent Object Storage
-- Client dashboard with drag-and-drop upload zone
-- Admin panel with sidebar navigation
-- Client list with search and country filter
-- Client detail view with document management
-- Document status management via dropdown
-- Document download and deletion
-- SMTP settings configuration
-- Background email notifications on document upload
+### Dashboard Cliente
+- Subida de documentos (PDF, imagenes incl. HEIC, max 5MB)
+- Categorias de documentos
+- Vista de estado de documentos
+- Requisitos del tramite seleccionado (colapsable en movil, completo en desktop)
 
-### Phase 2 (Feb 2026)
-- Document categories (identificacion, residencia, trabajo, resolucion, contrato, fiscal, otros)
-- Bulk download of all client documents as ZIP
-- Audit log tracking all system actions (uploads, deletes, status changes, SMTP updates)
-- Admin can upload documents to client profiles (resoluciones, etc.)
-- Client receives email notification when admin uploads a document
-- uploaded_by tracking (client vs admin) shown in document tables
+### Dashboard Admin
+- Lista de clientes con busqueda/filtros
+- Detalle de cliente con documentos
+- Preview/descarga/renombrar/eliminar documentos
+- Generacion de Ficha PDF (fpdf2)
+- Envio de emails via SMTP configurable
+- Logs de auditoria
+- Gestion de tramites (sistema + personalizados)
 
-## P0 (Remaining)
-- None - MVP + Phase 2 complete
+### Landing Page
+- Diseno corporativo con video informativo
+- Botones "Ingresar" y "Comenzar tramite"
 
-## P1 (Nice to have)
-- Document expiry/reminder system
-- Dashboard analytics for admin
-- Multiple admin users support
+### Tramites
+- Tramites estaticos por pais (Chile/Espana) via tramites_data.py
+- Tramites personalizados por admin
+- Edicion de requisitos por tramite
 
-## P2 (Future)
-- Multi-language support
-- Client portal notifications
-- Automatic document expiry reminders
-- Multiple admin users
+## Arquitectura
+```
+/app/backend/server.py      - API monolitica (~1367 lineas)
+/app/backend/tramites_data.py - Datos estaticos de tramites
+/app/frontend/src/pages/     - Paginas React
+/app/frontend/src/context/   - AuthContext
+```
+
+## Tareas Completadas (Abril 2026)
+- [x] MVP completo (auth, dashboards, documentos)
+- [x] Landing page con video
+- [x] Tramites por pais (Chile/Espana)
+- [x] Datos empresa/familia en registro
+- [x] Ficha PDF
+- [x] Impersonacion admin
+- [x] SMTP configurable
+- [x] Requisitos mobile-friendly (boton colapsable)
+- [x] Bug fix: login no cargaba country/tramite_type del usuario
+
+## Backlog
+- [ ] Refactorizar server.py en modulos (routes, models, utils) - Opcional
+- [ ] Mejoras adicionales segun solicitud del usuario
+
+## Despliegue
+Usuario despliega en servidor Plesk propio (tramilex.goroky.es) via GitHub + SSH.
+Ver /app/DEPLOY_GUIDE.md para instrucciones detalladas.

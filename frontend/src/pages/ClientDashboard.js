@@ -7,7 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { Upload, Download, LogOut, FileText, Image as ImageIcon, Clock, Tag, ClipboardList } from 'lucide-react';
+import { Upload, Download, LogOut, FileText, Image as ImageIcon, Clock, Tag, ClipboardList, ChevronDown } from 'lucide-react';
 
 const LOGO_URL = "https://tramilex.es/wp-content/uploads/2024/07/logo-tramilex-v3-1.jpg";
 
@@ -61,6 +61,7 @@ export default function ClientDashboard() {
   const [dragOver, setDragOver] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('otros');
   const [tramiteInfo, setTramiteInfo] = useState(null);
+  const [requisitosOpen, setRequisitosOpen] = useState(false);
   const fileInputRef = useRef(null);
 
   const fetchDocuments = useCallback(async () => {
@@ -177,55 +178,123 @@ export default function ClientDashboard() {
       <main className="max-w-5xl mx-auto px-6 py-8 md:py-12 space-y-8">
         {/* Required Documents Info */}
         {tramiteInfo && (
-          <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-5">
-            <div className="flex items-center gap-3 mb-4">
-              <div className="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center">
-                <ClipboardList className="w-4 h-4 text-sky-600" strokeWidth={1.5} />
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-slate-800" style={{ fontFamily: 'Manrope, sans-serif' }}>
-                  {tramiteInfo.name}
-                </p>
-                <p className="text-xs text-slate-500">Documentos que necesitas subir para tu tramite</p>
+          <>
+            {/* Mobile: Collapsible button */}
+            <div className="md:hidden bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden" data-testid="requisitos-mobile">
+              <button
+                onClick={() => setRequisitosOpen(!requisitosOpen)}
+                className="w-full flex items-center justify-between p-4 text-left"
+                data-testid="requisitos-toggle-btn"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center shrink-0">
+                    <ClipboardList className="w-4 h-4 text-sky-600" strokeWidth={1.5} />
+                  </div>
+                  <div>
+                    <p className="text-sm font-semibold text-slate-800" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                      Requisitos
+                    </p>
+                    <p className="text-xs text-slate-500">{tramiteInfo.name}</p>
+                  </div>
+                </div>
+                <ChevronDown className={`w-5 h-5 text-slate-400 transition-transform duration-200 ${requisitosOpen ? 'rotate-180' : ''}`} />
+              </button>
+              <div
+                className={`transition-all duration-300 ease-in-out overflow-hidden ${requisitosOpen ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'}`}
+                data-testid="requisitos-mobile-content"
+              >
+                <div className="px-4 pb-4 space-y-3 border-t border-slate-100 pt-3">
+                  {tramiteInfo?.requirements?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Requisitos</p>
+                      <ul className="space-y-1.5">
+                        {tramiteInfo.requirements.map((r, i) => (
+                          <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
+                            <span className="text-emerald-500 mt-0.5 font-bold">-</span> {r}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {tramiteInfo.docs_persona?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Documentos personales</p>
+                      <ul className="space-y-1.5">
+                        {tramiteInfo.docs_persona.map((d, i) => (
+                          <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
+                            <span className="text-sky-500 mt-0.5 font-bold">-</span> {d}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {tramiteInfo.docs_empresa?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Documentos empresa</p>
+                      <ul className="space-y-1.5">
+                        {tramiteInfo.docs_empresa.map((d, i) => (
+                          <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
+                            <span className="text-sky-500 mt-0.5 font-bold">-</span> {d}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
-            {tramiteInfo?.requirements?.length > 0 && (
-              <div className="mb-3">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Requisitos</p>
-                <ul className="space-y-1.5">
-                  {tramiteInfo.requirements.map((r, i) => (
-                    <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
-                      <span className="text-emerald-500 mt-0.5 font-bold">-</span> {r}
-                    </li>
-                  ))}
-                </ul>
+
+            {/* Desktop: Full display */}
+            <div className="hidden md:block bg-white border border-slate-200 rounded-lg shadow-sm p-5" data-testid="requisitos-desktop">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-8 h-8 rounded-full bg-sky-100 flex items-center justify-center">
+                  <ClipboardList className="w-4 h-4 text-sky-600" strokeWidth={1.5} />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-800" style={{ fontFamily: 'Manrope, sans-serif' }}>
+                    {tramiteInfo.name}
+                  </p>
+                  <p className="text-xs text-slate-500">Documentos que necesitas subir para tu tramite</p>
+                </div>
               </div>
-            )}
-            {tramiteInfo.docs_persona?.length > 0 && (
-              <div className="mb-3">
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Documentos personales</p>
-                <ul className="space-y-1.5">
-                  {tramiteInfo.docs_persona.map((d, i) => (
-                    <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
-                      <span className="text-sky-500 mt-0.5 font-bold">-</span> {d}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {tramiteInfo.docs_empresa?.length > 0 && (
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Documentos empresa</p>
-                <ul className="space-y-1.5">
-                  {tramiteInfo.docs_empresa.map((d, i) => (
-                    <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
-                      <span className="text-sky-500 mt-0.5 font-bold">-</span> {d}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
+              {tramiteInfo?.requirements?.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Requisitos</p>
+                  <ul className="space-y-1.5">
+                    {tramiteInfo.requirements.map((r, i) => (
+                      <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
+                        <span className="text-emerald-500 mt-0.5 font-bold">-</span> {r}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {tramiteInfo.docs_persona?.length > 0 && (
+                <div className="mb-3">
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Documentos personales</p>
+                  <ul className="space-y-1.5">
+                    {tramiteInfo.docs_persona.map((d, i) => (
+                      <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
+                        <span className="text-sky-500 mt-0.5 font-bold">-</span> {d}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {tramiteInfo.docs_empresa?.length > 0 && (
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Documentos empresa</p>
+                  <ul className="space-y-1.5">
+                    {tramiteInfo.docs_empresa.map((d, i) => (
+                      <li key={i} className="text-sm text-slate-600 flex items-start gap-2">
+                        <span className="text-sky-500 mt-0.5 font-bold">-</span> {d}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          </>
         )}
 
         {/* Category Select + Upload Zone */}
