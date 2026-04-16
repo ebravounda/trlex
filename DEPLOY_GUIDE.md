@@ -1,5 +1,5 @@
 # Despliegue Tramilex en tramilex.goroky.es (Plesk)
-# Todo dentro de /var/www/vhosts/goroky.es/tramilex.goroky.es/
+# Todo dentro de /var/www/vhosts/goroky.com/tramilex.goroky.es/
 
 ---
 
@@ -8,17 +8,17 @@
 Conecta por SSH:
 
 ```bash
-cd /var/www/vhosts/goroky.es/tramilex.goroky.es
+cd /var/www/vhosts/goroky.com/tramilex.goroky.es
 mkdir -p backend frontend
 ```
 
 Sube por SFTP o SCP:
-- Contenido de `backend/` → `/var/www/vhosts/goroky.es/tramilex.goroky.es/backend/`
-- Contenido de `frontend/` → `/var/www/vhosts/goroky.es/tramilex.goroky.es/frontend/`
+- Contenido de `backend/` → `/var/www/vhosts/goroky.com/tramilex.goroky.es/backend/`
+- Contenido de `frontend/` → `/var/www/vhosts/goroky.com/tramilex.goroky.es/frontend/`
 
 Estructura final:
 ```
-/var/www/vhosts/goroky.es/tramilex.goroky.es/
+/var/www/vhosts/goroky.com/tramilex.goroky.es/
 ├── backend/
 │   ├── server.py
 │   ├── requirements.txt
@@ -34,7 +34,7 @@ Estructura final:
 ## PASO 2: Configurar el Backend
 
 ```bash
-cd /var/www/vhosts/goroky.es/tramilex.goroky.es/backend
+cd /var/www/vhosts/goroky.com/tramilex.goroky.es/backend
 
 python3 -m venv venv
 source venv/bin/activate
@@ -44,7 +44,7 @@ pip install -r requirements.txt
 
 ### Crear .env
 ```bash
-cat > /var/www/vhosts/goroky.es/tramilex.goroky.es/backend/.env << 'EOF'
+cat > /var/www/vhosts/goroky.com/tramilex.goroky.es/backend/.env << 'EOF'
 MONGO_URL="mongodb://localhost:27017"
 DB_NAME="tramilex_prod"
 CORS_ORIGINS="https://tramilex.goroky.es"
@@ -81,8 +81,8 @@ After=network.target mongod.service
 
 [Service]
 Type=simple
-WorkingDirectory=/var/www/vhosts/goroky.es/tramilex.goroky.es/backend
-ExecStart=/var/www/vhosts/goroky.es/tramilex.goroky.es/backend/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8001 --workers 2
+WorkingDirectory=/var/www/vhosts/goroky.com/tramilex.goroky.es/backend
+ExecStart=/var/www/vhosts/goroky.com/tramilex.goroky.es/backend/venv/bin/uvicorn server:app --host 127.0.0.1 --port 8001 --workers 2
 Restart=always
 RestartSec=5
 
@@ -101,7 +101,7 @@ systemctl status tramilex-backend
 ## PASO 4: Compilar el Frontend
 
 ```bash
-cd /var/www/vhosts/goroky.es/tramilex.goroky.es/frontend
+cd /var/www/vhosts/goroky.com/tramilex.goroky.es/frontend
 
 cat > .env << 'EOF'
 REACT_APP_BACKEND_URL=https://tramilex.goroky.es
@@ -111,7 +111,7 @@ yarn install
 yarn build
 
 # Copiar build al document root (la raiz del subdominio)
-cp -r build/* /var/www/vhosts/goroky.es/tramilex.goroky.es/
+cp -r build/* /var/www/vhosts/goroky.com/tramilex.goroky.es/
 ```
 
 ---
@@ -165,9 +165,9 @@ systemctl restart tramilex-backend
 journalctl -u tramilex-backend -f
 
 # Actualizar frontend
-cd /var/www/vhosts/goroky.es/tramilex.goroky.es/frontend
+cd /var/www/vhosts/goroky.com/tramilex.goroky.es/frontend
 yarn build
-cp -r build/* /var/www/vhosts/goroky.es/tramilex.goroky.es/
+cp -r build/* /var/www/vhosts/goroky.com/tramilex.goroky.es/
 
 # Backup DB
 mongodump --db tramilex_prod --out /root/backups/$(date +%Y%m%d)
