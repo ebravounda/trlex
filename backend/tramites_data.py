@@ -151,6 +151,43 @@ TRAMITES = {
         "label": "Espana",
         "tramites": [
             {
+                "id": "regularizacion_extraordinaria",
+                "name": "Regularizacion Extraordinaria (Arraigo)",
+                "docs_persona": [
+                    "Pasaporte completo (vigente o caducado) o documento de identidad valido",
+                    "Acreditacion de presencia ininterrumpida en Espana durante 5 meses previos a la solicitud",
+                    "Certificado de antecedentes penales (pais de origen y Espana)",
+                    "Empadronamiento que acredite residencia continuada",
+                    "Justificante de pago de la tasa correspondiente",
+                ],
+                "docs_empresa": [
+                    "Contrato de trabajo (sumando mas de 90 dias al ano) o declaracion responsable de autoempleo",
+                    "Certificado de inscripcion empresa en TGSS (si aplica)",
+                    "CIF de la empresa contratante (si aplica)",
+                ],
+                "requirements": [
+                    "PLAZO MAXIMO: 30/06/2026 para presentar solicitud",
+                    "Haber estado en Espana ANTES del 1 de enero de 2026",
+                    "Ser mayor de edad",
+                    "Estar en Espana en el momento de la solicitud",
+                    "No tener autorizacion de estancia o residencia vigente",
+                    "No ser parte interesada en procedimientos de concesion, prorroga, renovacion o modificacion de otras autorizaciones",
+                    "No haber tenido proteccion temporal por Decision (UE) 2022/382 (Ucrania)",
+                    "Residencia ininterrumpida en Espana durante 5 meses previos a la solicitud",
+                    "No tener antecedentes penales",
+                    "No suponer amenaza al orden publico, seguridad o salud publica",
+                    "--- CUMPLIR AL MENOS UNO DE ESTOS REQUISITOS ESPECIFICOS ---",
+                    "A) TRABAJO: Haber trabajado (cuenta ajena o propia) durante estancia en Espana, O demostrar intencion de trabajar (oferta laboral o declaracion responsable de autoempleo). Contratos deben sumar mas de 90 dias al ano.",
+                    "B) UNIDAD FAMILIAR: Convivir con hijos menores, hijos mayores con discapacidad, hijos mayores que no puedan valerse por salud, o ascendientes de primer grado convivientes.",
+                    "C) VULNERABILIDAD: Acreditar situacion de vulnerabilidad certificada por entidades de asistencia social competentes o entidades del Tercer Sector registradas.",
+                    "--- INFORMACION IMPORTANTE ---",
+                    "Autorizacion provisional para residir y trabajar desde la admision a tramite",
+                    "Validez: 1 ano, autoriza residencia y trabajo (cuenta ajena y propia) en toda Espana y en cualquier sector",
+                    "Familiares convivientes (padres, conyuge/pareja registrada) pueden solicitar simultaneamente",
+                    "Resolucion maxima: 3 meses (silencio administrativo negativo para via A.1)",
+                ],
+            },
+            {
                 "id": "convenio_bilateral_ss",
                 "name": "Convenio Bilateral Seguridad Social Chile-Espana",
                 "docs_persona": [
@@ -393,6 +430,7 @@ def get_tramite_docs(country, tramite_id):
             return {
                 "id": t["id"],
                 "name": t["name"],
+                "requirements": t.get("requirements", []),
                 "docs_persona": t.get("docs_persona", []),
                 "docs_empresa": t.get("docs_empresa", []),
             }

@@ -722,6 +722,21 @@ async def generate_ficha_pdf(client_id: str, user=Depends(require_admin)):
     )
 
 
+@api_router.post("/clients/{client_id}/impersonate")
+async def impersonate_client(client_id: str, user=Depends(require_admin)):
+    try:
+        client = await db.users.find_one({"_id": ObjectId(client_id), "role": "client"})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+    if not client:
+        raise HTTPException(status_code=404, detail="Cliente no encontrado")
+
+    token = create_access_token(str(client["_id"]), client["email"], "client")
+    await log_audit("impersonate_client", user["_id"], user.get("name", ""),
+                    {"client_id": client_id, "client_name": client.get("name", "")})
+    return {"token": token, "name": client.get("name", ""), "email": client.get("email", "")}
+
+
 @api_router.delete("/clients/{client_id}")
 async def delete_client(client_id: str, user=Depends(require_admin)):
     await db.documents.update_many(

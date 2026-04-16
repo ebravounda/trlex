@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Download, Trash2, MoreHorizontal, CheckCircle, Clock,
   Mail, Phone, MapPin, Globe, FileText, Image as ImageIcon, User,
-  Upload, Package, Tag, Eye, X, Pencil, FileDown, Users, Mail as MailIcon, Building2, Globe2, Send
+  Upload, Package, Tag, Eye, X, Pencil, FileDown, Users, Mail as MailIcon, Building2, Globe2, Send, LogIn
 } from 'lucide-react';
 
 const CATEGORY_LABELS = {
@@ -121,6 +121,17 @@ export default function AdminClientDetail() {
       toast.error(err.response?.data?.detail || 'Error enviando email');
     } finally {
       setSendingEmail(false);
+    }
+  };
+
+  const handleImpersonate = async () => {
+    try {
+      const res = await api.post(`/clients/${clientId}/impersonate`);
+      const url = `${window.location.origin}/dashboard?token=${res.data.token}`;
+      window.open(url, '_blank');
+      toast.success(`Sesion abierta como ${res.data.name}`);
+    } catch (err) {
+      toast.error('Error iniciando sesion como cliente');
     }
   };
 
@@ -298,6 +309,16 @@ export default function AdminClientDetail() {
             </p>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-2 text-slate-600"
+              onClick={handleImpersonate}
+              data-testid="impersonate-btn"
+            >
+              <LogIn className="w-4 h-4" />
+              Iniciar sesion como cliente
+            </Button>
             <Button
               variant="outline"
               size="sm"
