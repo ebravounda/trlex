@@ -8,6 +8,14 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Handle impersonation token from URL before loading user
+    const params = new URLSearchParams(window.location.search);
+    const impersonateToken = params.get('token');
+    if (impersonateToken && window.location.pathname === '/dashboard') {
+      localStorage.setItem('tramilex_token', impersonateToken);
+      window.history.replaceState({}, '', '/dashboard');
+    }
+
     const token = localStorage.getItem('tramilex_token');
     if (token) {
       api.get('/auth/me')
