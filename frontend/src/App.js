@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useSearchParams } from 'react-router-dom';
+import { useState, useEffect } from 'react';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import LandingPage from '@/pages/LandingPage';
@@ -12,6 +13,30 @@ import AdminTramites from '@/pages/AdminTramites';
 import AdminEmail from '@/pages/AdminEmail';
 import AdminLayout from '@/components/AdminLayout';
 import { Toaster } from 'sonner';
+
+function ImpersonateHandler() {
+  const [searchParams] = useSearchParams();
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    const token = searchParams.get('token');
+    if (token) {
+      localStorage.setItem('tramilex_token', token);
+      window.location.replace('/dashboard');
+    } else {
+      setDone(true);
+    }
+  }, [searchParams]);
+
+  if (!done) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-900 border-t-transparent" />
+      </div>
+    );
+  }
+  return <ClientDashboard />;
+}
 
 function AppRoutes() {
   const { user, loading } = useAuth();
@@ -44,11 +69,7 @@ function AppRoutes() {
       />
       <Route
         path="/dashboard"
-        element={
-          <ProtectedRoute requiredRole="client">
-            <ClientDashboard />
-          </ProtectedRoute>
-        }
+        element={<ImpersonateHandler />}
       />
       <Route
         path="/admin"

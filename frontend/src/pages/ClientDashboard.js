@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -46,17 +46,7 @@ function getFileIcon(contentType) {
 export default function ClientDashboard() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
   const [documents, setDocuments] = useState([]);
-
-  // Handle impersonation token
-  useEffect(() => {
-    const token = searchParams.get('token');
-    if (token) {
-      localStorage.setItem('tramilex_token', token);
-      window.location.href = '/dashboard';
-    }
-  }, [searchParams]);
   const [uploading, setUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('otros');
