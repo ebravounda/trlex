@@ -1,6 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from '@/context/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import LandingPage from '@/pages/LandingPage';
 import AuthPage from '@/pages/AuthPage';
 import ClientDashboard from '@/pages/ClientDashboard';
 import AdminClients from '@/pages/AdminClients';
@@ -25,6 +26,14 @@ function AppRoutes() {
 
   return (
     <Routes>
+      <Route
+        path="/"
+        element={
+          user
+            ? <Navigate to={user.role === 'admin' ? '/admin/clients' : '/dashboard'} replace />
+            : <LandingPage />
+        }
+      />
       <Route
         path="/login"
         element={
@@ -57,7 +66,7 @@ function AppRoutes() {
         <Route path="audit" element={<AdminAudit />} />
         <Route path="settings" element={<AdminSettings />} />
       </Route>
-      <Route path="*" element={<Navigate to="/login" replace />} />
+      <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
 }
