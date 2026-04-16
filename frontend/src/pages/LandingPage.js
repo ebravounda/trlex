@@ -86,6 +86,33 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Video */}
+      <section className="py-16 px-6">
+        <div className="max-w-4xl mx-auto">
+          <div className="text-center mb-8">
+            <h2 className="text-base md:text-lg font-bold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>
+              Regularizacion Extraordinaria 2026
+            </h2>
+            <p className="text-sm text-slate-500 mt-1" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
+              Te explicamos todo en menos de 2 minutos
+            </p>
+          </div>
+          <div className="relative rounded-2xl overflow-hidden shadow-2xl shadow-slate-900/10 border border-slate-200 bg-slate-900 aspect-video">
+            <video
+              className="w-full h-full object-contain"
+              controls
+              playsInline
+              preload="metadata"
+              poster=""
+              data-testid="landing-video"
+            >
+              <source src="https://customer-assets.emergentagent.com/job_inmigra-docs/artifacts/jla0hm55_WhatsApp%20Video%202026-04-16%20at%2012.35.08.mp4" type="video/mp4" />
+              Tu navegador no soporta video.
+            </video>
+          </div>
+        </div>
+      </section>
+
       {/* Features */}
       <section className="py-20 px-6 bg-slate-50">
         <div className="max-w-5xl mx-auto">
