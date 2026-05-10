@@ -36,7 +36,6 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
     localStorage.setItem('tramilex_token', res.data.token);
-    // Fetch full profile including country/tramite_type
     try {
       const meRes = await api.get('/auth/me');
       const userData = meRes.data;
@@ -45,6 +44,13 @@ export function AuthProvider({ children }) {
     } catch {
       setUser(res.data);
     }
+    return res.data;
+  }, []);
+
+  const companyLogin = useCallback(async (cifNif, password) => {
+    const res = await api.post('/auth/company-login', { email: cifNif, password });
+    localStorage.setItem('tramilex_token', res.data.token);
+    setUser(res.data);
     return res.data;
   }, []);
 
@@ -61,7 +67,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, companyLogin, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

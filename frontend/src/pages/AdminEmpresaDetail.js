@@ -1,0 +1,556 @@
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import api from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { toast } from 'sonner';
+import {
+  ArrowLeft, Building2, Users, Copy, Send, Plus, Trash2, Download,
+  FileText, Image as ImageIcon, Clock, ChevronDown, ChevronUp,
+  ClipboardList, Mail, RotateCcw, Upload, Eye, Check, AlertCircle
+} from 'lucide-react';
+
+const CATEGORIES = [
+  { value: "identificacion", label: "Identificacion" },
+  { value: "residencia", label: "Residencia" },
+  { value: "trabajo", label: "Trabajo" },
+  { value: "contrato", label: "Contrato" },
+  { value: "fiscal", label: "Fiscal" },
+  { value: "otros", label: "Otros" },
+];
+
+const TRAMITE_STATUSES = [
+  { value: "pendiente", label: "Pendiente", color: "bg-amber-100 text-amber-700 border-amber-200" },
+  { value: "en_proceso", label: "En proceso", color: "bg-sky-100 text-sky-700 border-sky-200" },
+  { value: "completado", label: "Completado", color: "bg-emerald-100 text-emerald-700 border-emerald-200" },
+  { value: "rechazado", label: "Rechazado", color: "bg-red-100 text-red-700 border-red-200" },
+];
+
+function formatDate(iso) {
+  if (!iso) return '-';
+  const d = new Date(iso);
+  return d.toLocaleDateString('es-ES', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function getFileIcon(ct) {
+  if (ct?.startsWith('image/')) return <ImageIcon className="w-4 h-4 text-sky-600" />;
+  return <FileText className="w-4 h-4 text-red-500" />;
+}
+
+export default function AdminEmpresaDetail() {
+  const { companyId } = useParams();
+  const navigate = useNavigate();
+  const [company, setCompany] = useState(null);
+  const [tramites, setTramites] = useState([]);
+  const [allTramites, setAllTramites] = useState({});
+  const [expandedWorker, setExpandedWorker] = useState(null);
+  const [workerDocs, setWorkerDocs] = useState({});
+  const [showAddWorker, setShowAddWorker] = useState(false);
+  const [showAddTramite, setShowAddTramite] = useState(false);
+  const [showSendCreds, setShowSendCreds] = useState(false);
+  const [customEmail, setCustomEmail] = useState('');
+  const [sendMode, setSendMode] = useState('registro');
+  const fileInputRef = useRef(null);
+  const [uploadingFor, setUploadingFor] = useState(null);
+  const [uploadCategory, setUploadCategory] = useState('otros');
+
+  const [workerForm, setWorkerForm] = useState({ name: '', nie: '', passport_number: '', phone: '', email: '', nationality: '' });
+  const [tramiteForm, setTramiteForm] = useState({ country: '', tramite_id: '', notes: '' });
+
+  const fetchCompany = useCallback(async () => {
+    try {
+      const res = await api.get(`/companies/${companyId}`);
+      setCompany(res.data);
+    } catch { toast.error('Error cargando empresa'); }
+  }, [companyId]);
+
+  const fetchTramites = useCallback(async () => {
+    try {
+      const res = await api.get('/tramites');
+      setAllTramites(res.data);
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchCompany(); fetchTramites(); }, [fetchCompany, fetchTramites]);
+
+  const fetchWorkerDocs = async (workerId) => {
+    try {
+      const res = await api.get(`/companies/${companyId}/workers/${workerId}/documents`);
+      setWorkerDocs(prev => ({ ...prev, [workerId]: res.data }));
+    } catch {}
+  };
+
+  const toggleWorker = (workerId) => {
+    if (expandedWorker === workerId) {
+      setExpandedWorker(null);
+    } else {
+      setExpandedWorker(workerId);
+      if (!workerDocs[workerId]) fetchWorkerDocs(workerId);
+    }
+  };
+
+  const handleAddWorker = async () => {
+    if (!workerForm.name.trim()) { toast.error('El nombre es obligatorio'); return; }
+    try {
+      await api.post(`/companies/${companyId}/workers`, workerForm);
+      setWorkerForm({ name: '', nie: '', passport_number: '', phone: '', email: '', nationality: '' });
+      setShowAddWorker(false);
+      fetchCompany();
+      toast.success('Trabajador agregado');
+    } catch (err) { toast.error(err.response?.data?.detail || 'Error'); }
+  };
+
+  const handleDeleteWorker = async (workerId, name) => {
+    if (!window.confirm(`Eliminar trabajador "${name}"?`)) return;
+    try {
+      await api.delete(`/companies/${companyId}/workers/${workerId}`);
+      fetchCompany();
+      toast.success('Trabajador eliminado');
+    } catch { toast.error('Error'); }
+  };
+
+  const handleAddTramite = async () => {
+    if (!tramiteForm.country || !tramiteForm.tramite_id) { toast.error('Selecciona pais y tramite'); return; }
+    try {
+      await api.post(`/companies/${companyId}/tramites`, tramiteForm);
+      setTramiteForm({ country: '', tramite_id: '', notes: '' });
+      setShowAddTramite(false);
+      fetchCompany();
+      toast.success('Tramite asignado');
+    } catch (err) { toast.error(err.response?.data?.detail || 'Error'); }
+  };
+
+  const handleUpdateTramiteStatus = async (tramiteId, newStatus) => {
+    try {
+      await api.put(`/companies/${companyId}/tramites/${tramiteId}`, { status: newStatus, notes: '' });
+      fetchCompany();
+      toast.success('Estado actualizado');
+    } catch { toast.error('Error'); }
+  };
+
+  const handleDeleteTramite = async (tramiteId) => {
+    if (!window.confirm('Eliminar este tramite?')) return;
+    try {
+      await api.delete(`/companies/${companyId}/tramites/${tramiteId}`);
+      fetchCompany();
+      toast.success('Tramite eliminado');
+    } catch { toast.error('Error'); }
+  };
+
+  const handleUploadDocs = async (workerId, files) => {
+    if (!files?.length) return;
+    setUploadingFor(workerId);
+    let count = 0;
+    for (const file of files) {
+      if (file.size > 5 * 1024 * 1024) { toast.error(`${file.name} supera 5MB`); continue; }
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('category', uploadCategory);
+      fd.append('uploaded_by', 'admin');
+      try {
+        await api.post(`/companies/${companyId}/workers/${workerId}/documents/upload`, fd);
+        count++;
+      } catch { toast.error(`Error subiendo ${file.name}`); }
+    }
+    if (count > 0) { toast.success(`${count} documento(s) subido(s)`); fetchWorkerDocs(workerId); }
+    setUploadingFor(null);
+  };
+
+  const handleDownloadAll = async (workerId, workerName) => {
+    try {
+      const res = await api.get(`/companies/${companyId}/workers/${workerId}/documents/download-all`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `documentos_${workerName.replace(/\s/g, '_')}.zip`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { toast.error('No hay documentos para descargar'); }
+  };
+
+  const handleDownloadDoc = async (doc) => {
+    try {
+      const res = await api.get(`/company-documents/${doc.id}/download`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.original_filename;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { toast.error('Error descargando'); }
+  };
+
+  const handleDocStatus = async (docId, workerId, newStatus) => {
+    try {
+      await api.put(`/company-documents/${docId}/status`, { status: newStatus });
+      fetchWorkerDocs(workerId);
+      toast.success('Estado actualizado');
+    } catch { toast.error('Error'); }
+  };
+
+  const handleDeleteDoc = async (docId, workerId) => {
+    try {
+      await api.delete(`/company-documents/${docId}`);
+      fetchWorkerDocs(workerId);
+      toast.success('Documento eliminado');
+    } catch { toast.error('Error'); }
+  };
+
+  const copyCredentials = () => {
+    if (!company) return;
+    const text = `Usuario (CIF/NIF): ${company.cif_nif}\nContrasena: ${company.password_plain}`;
+    navigator.clipboard.writeText(text);
+    toast.success('Credenciales copiadas');
+  };
+
+  const handleSendCredentials = async () => {
+    const email = sendMode === 'registro' ? '' : customEmail;
+    try {
+      await api.post(`/companies/${companyId}/send-credentials`, { email });
+      setShowSendCreds(false);
+      setCustomEmail('');
+      fetchCompany();
+      toast.success('Credenciales enviadas');
+    } catch (err) { toast.error(err.response?.data?.detail || 'Error enviando'); }
+  };
+
+  const handleResendEmail = async (emailId) => {
+    try {
+      await api.post(`/companies/${companyId}/resend-email/${emailId}`);
+      fetchCompany();
+      toast.success('Correo reenviado');
+    } catch { toast.error('Error reenviando'); }
+  };
+
+  if (!company) return (
+    <div className="flex items-center justify-center py-20">
+      <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-900 border-t-transparent" />
+    </div>
+  );
+
+  const statusColor = (s) => TRAMITE_STATUSES.find(t => t.value === s)?.color || 'bg-slate-100 text-slate-700';
+  const statusLabel = (s) => TRAMITE_STATUSES.find(t => t.value === s)?.label || s;
+
+  const countryTramites = tramiteForm.country && allTramites[tramiteForm.country]
+    ? allTramites[tramiteForm.country].tramites || []
+    : [];
+
+  return (
+    <div className="space-y-6" data-testid="admin-empresa-detail">
+      <button onClick={() => navigate('/admin/empresas')} className="flex items-center gap-2 text-sm text-sky-600 hover:text-sky-800" data-testid="back-to-empresas">
+        <ArrowLeft className="w-4 h-4" /> Volver a empresas
+      </button>
+
+      {/* Company Header */}
+      <div className="bg-white border border-slate-200 rounded-lg p-6">
+        <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="w-14 h-14 rounded-full bg-sky-100 flex items-center justify-center shrink-0">
+              <Building2 className="w-6 h-6 text-sky-600" />
+            </div>
+            <div>
+              <h1 className="text-xl font-bold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>{company.name}</h1>
+              <p className="text-sm text-slate-500 mt-0.5">Registrada el {formatDate(company.created_at)}</p>
+              <div className="flex flex-wrap gap-4 mt-3 text-sm text-slate-600">
+                <span><strong>CIF/NIF:</strong> {company.cif_nif}</span>
+                <span><strong>Email:</strong> {company.email || '-'}</span>
+                <span><strong>Tel:</strong> {company.phone || '-'}</span>
+                {company.contact_person && <span><strong>Contacto:</strong> {company.contact_person}</span>}
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" className="gap-2" onClick={copyCredentials} data-testid="copy-creds-btn">
+              <Copy className="w-3.5 h-3.5" /> Copiar credenciales
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowSendCreds(true)} data-testid="send-creds-btn">
+              <Send className="w-3.5 h-3.5" /> Enviar credenciales
+            </Button>
+          </div>
+        </div>
+
+        {/* Credentials display */}
+        <div className="mt-4 bg-slate-50 border border-slate-200 rounded-lg p-4">
+          <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Datos de acceso</p>
+          <p className="text-sm text-slate-700"><strong>Usuario (CIF/NIF):</strong> {company.cif_nif}</p>
+          <p className="text-sm text-slate-700"><strong>Contrasena:</strong> {company.password_plain || '****'}</p>
+        </div>
+      </div>
+
+      {/* Tramites Section */}
+      <div className="bg-white border border-slate-200 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <ClipboardList className="w-5 h-5 text-slate-400" />
+            <h2 className="text-base font-semibold text-slate-900">Historial de tramites</h2>
+          </div>
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowAddTramite(true)} data-testid="add-tramite-btn">
+            <Plus className="w-3.5 h-3.5" /> Asignar tramite
+          </Button>
+        </div>
+
+        {company.tramites?.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-6">No hay tramites asignados</p>
+        ) : (
+          <div className="space-y-3">
+            {company.tramites?.map(t => (
+              <div key={t.id} className="border border-slate-200 rounded-lg p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{t.tramite_name || t.tramite_id}</p>
+                  <p className="text-xs text-slate-500 mt-0.5">{t.country === 'espana' ? 'Espana' : 'Chile'} - {formatDate(t.created_at)}</p>
+                  {t.notes && <p className="text-xs text-slate-500 mt-1">{t.notes}</p>}
+                </div>
+                <div className="flex items-center gap-2">
+                  <Select value={t.status} onValueChange={(v) => handleUpdateTramiteStatus(t.id, v)}>
+                    <SelectTrigger className="h-8 w-36 text-xs">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {TRAMITE_STATUSES.map(s => (
+                        <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Badge className={`text-xs ${statusColor(t.status)}`}>{statusLabel(t.status)}</Badge>
+                  <Button variant="ghost" size="sm" onClick={() => handleDeleteTramite(t.id)}>
+                    <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Workers Section */}
+      <div className="bg-white border border-slate-200 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <Users className="w-5 h-5 text-slate-400" />
+            <h2 className="text-base font-semibold text-slate-900">Trabajadores ({company.workers?.length || 0})</h2>
+          </div>
+          <Button variant="outline" size="sm" className="gap-2" onClick={() => setShowAddWorker(true)} data-testid="add-worker-btn">
+            <Plus className="w-3.5 h-3.5" /> Agregar trabajador
+          </Button>
+        </div>
+
+        {company.workers?.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-6">No hay trabajadores registrados</p>
+        ) : (
+          <div className="space-y-3">
+            {company.workers?.map(w => (
+              <div key={w.id} className="border border-slate-200 rounded-lg overflow-hidden">
+                <div
+                  className="p-4 flex items-center justify-between cursor-pointer hover:bg-slate-50"
+                  onClick={() => toggleWorker(w.id)}
+                  data-testid={`worker-row-${w.id}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center">
+                      <span className="text-xs font-bold text-slate-600">{w.name.charAt(0).toUpperCase()}</span>
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-800">{w.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {w.nie && `NIE: ${w.nie}`} {w.passport_number && `Pass: ${w.passport_number}`}
+                        {' '}{w.doc_count} doc(s)
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => handleDownloadAll(w.id, w.name)} data-testid={`download-all-${w.id}`}>
+                      <Download className="w-3.5 h-3.5" /> Descargar Documentos
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => handleDeleteWorker(w.id, w.name)}>
+                      <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                    </Button>
+                    {expandedWorker === w.id ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                  </div>
+                </div>
+
+                {expandedWorker === w.id && (
+                  <div className="border-t border-slate-200 p-4 bg-slate-50/50">
+                    {/* Upload area */}
+                    <div className="flex items-center gap-3 mb-3">
+                      <Select value={uploadCategory} onValueChange={setUploadCategory}>
+                        <SelectTrigger className="w-40 h-8 text-xs bg-white">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        multiple
+                        accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,image/*,application/pdf"
+                        className="hidden"
+                        onChange={e => handleUploadDocs(w.id, Array.from(e.target.files))}
+                      />
+                      <Button
+                        variant="outline" size="sm" className="gap-1 text-xs"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={uploadingFor === w.id}
+                      >
+                        <Upload className="w-3.5 h-3.5" />
+                        {uploadingFor === w.id ? 'Subiendo...' : 'Subir documento'}
+                      </Button>
+                    </div>
+
+                    {/* Documents list */}
+                    {(workerDocs[w.id] || []).length === 0 ? (
+                      <p className="text-xs text-slate-500 text-center py-4">Sin documentos</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {(workerDocs[w.id] || []).map(doc => (
+                          <div key={doc.id} className="flex items-center justify-between bg-white border border-slate-200 rounded-lg p-3">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {getFileIcon(doc.content_type)}
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium text-slate-800 truncate">{doc.display_name || doc.original_filename}</p>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-xs text-slate-500">{formatDate(doc.uploaded_at)}</span>
+                                  <Badge className={`text-[10px] ${doc.status === 'reviewed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                                    {doc.status === 'reviewed' ? 'Revisado' : 'Pendiente'}
+                                  </Badge>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-1 shrink-0">
+                              {doc.status !== 'reviewed' ? (
+                                <Button variant="ghost" size="sm" onClick={() => handleDocStatus(doc.id, w.id, 'reviewed')} title="Marcar revisado">
+                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
+                                </Button>
+                              ) : (
+                                <Button variant="ghost" size="sm" onClick={() => handleDocStatus(doc.id, w.id, 'pending_review')} title="Marcar pendiente">
+                                  <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
+                                </Button>
+                              )}
+                              <Button variant="ghost" size="sm" onClick={() => handleDownloadDoc(doc)}>
+                                <Download className="w-3.5 h-3.5 text-slate-500" />
+                              </Button>
+                              <Button variant="ghost" size="sm" onClick={() => handleDeleteDoc(doc.id, w.id)}>
+                                <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                              </Button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Email History */}
+      {company.email_history?.length > 0 && (
+        <div className="bg-white border border-slate-200 rounded-lg p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <Mail className="w-5 h-5 text-slate-400" />
+            <h2 className="text-base font-semibold text-slate-900">Historial de correos enviados</h2>
+          </div>
+          <div className="space-y-2">
+            {company.email_history.map(e => (
+              <div key={e.id} className="flex items-center justify-between border border-slate-200 rounded-lg p-3">
+                <div>
+                  <p className="text-sm text-slate-700">{e.to_email}</p>
+                  <p className="text-xs text-slate-500">{e.type === 'credentials_resend' ? 'Reenvio' : 'Credenciales'} - {formatDate(e.sent_at)}</p>
+                </div>
+                <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => handleResendEmail(e.id)} data-testid={`resend-${e.id}`}>
+                  <RotateCcw className="w-3.5 h-3.5" /> Reenviar
+                </Button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Add Worker Dialog */}
+      <Dialog open={showAddWorker} onOpenChange={setShowAddWorker}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Agregar trabajador</DialogTitle></DialogHeader>
+          <div className="space-y-3 mt-2">
+            <Input placeholder="Nombre completo *" value={workerForm.name} onChange={e => setWorkerForm({...workerForm, name: e.target.value})} data-testid="worker-name-input" />
+            <Input placeholder="NIE" value={workerForm.nie} onChange={e => setWorkerForm({...workerForm, nie: e.target.value})} />
+            <Input placeholder="Pasaporte" value={workerForm.passport_number} onChange={e => setWorkerForm({...workerForm, passport_number: e.target.value})} />
+            <Input placeholder="Telefono" value={workerForm.phone} onChange={e => setWorkerForm({...workerForm, phone: e.target.value})} />
+            <Input placeholder="Email" value={workerForm.email} onChange={e => setWorkerForm({...workerForm, email: e.target.value})} />
+            <Input placeholder="Nacionalidad" value={workerForm.nationality} onChange={e => setWorkerForm({...workerForm, nationality: e.target.value})} />
+            <Button onClick={handleAddWorker} className="w-full bg-slate-900 hover:bg-slate-800" data-testid="submit-worker-btn">
+              Agregar trabajador
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Tramite Dialog */}
+      <Dialog open={showAddTramite} onOpenChange={setShowAddTramite}>
+        <DialogContent className="max-w-md">
+          <DialogHeader><DialogTitle>Asignar tramite</DialogTitle></DialogHeader>
+          <div className="space-y-3 mt-2">
+            <Select value={tramiteForm.country} onValueChange={v => setTramiteForm({...tramiteForm, country: v, tramite_id: ''})}>
+              <SelectTrigger data-testid="tramite-country-select"><SelectValue placeholder="Seleccionar pais" /></SelectTrigger>
+              <SelectContent>
+                {Object.entries(allTramites).map(([key, val]) => (
+                  <SelectItem key={key} value={key}>{val.name || key}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {tramiteForm.country && (
+              <Select value={tramiteForm.tramite_id} onValueChange={v => setTramiteForm({...tramiteForm, tramite_id: v})}>
+                <SelectTrigger data-testid="tramite-type-select"><SelectValue placeholder="Seleccionar tramite" /></SelectTrigger>
+                <SelectContent>
+                  {countryTramites.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+            <Textarea placeholder="Notas (opcional)" value={tramiteForm.notes} onChange={e => setTramiteForm({...tramiteForm, notes: e.target.value})} />
+            <Button onClick={handleAddTramite} className="w-full bg-slate-900 hover:bg-slate-800" data-testid="submit-tramite-btn">
+              Asignar tramite
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Send Credentials Dialog */}
+      <Dialog open={showSendCreds} onOpenChange={setShowSendCreds}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader><DialogTitle>Enviar credenciales</DialogTitle></DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="sendMode" checked={sendMode === 'registro'} onChange={() => setSendMode('registro')} className="accent-slate-900" />
+                <span className="text-sm text-slate-700">Enviar al correo de registro ({company.email || 'sin email'})</span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input type="radio" name="sendMode" checked={sendMode === 'custom'} onChange={() => setSendMode('custom')} className="accent-slate-900" />
+                <span className="text-sm text-slate-700">Ingresar correo de envio</span>
+              </label>
+            </div>
+            {sendMode === 'custom' && (
+              <Input placeholder="correo@ejemplo.com" value={customEmail} onChange={e => setCustomEmail(e.target.value)} data-testid="custom-email-input" />
+            )}
+            <Button
+              onClick={handleSendCredentials}
+              className="w-full bg-slate-900 hover:bg-slate-800"
+              disabled={sendMode === 'custom' && !customEmail.trim()}
+              data-testid="confirm-send-creds-btn"
+            >
+              Enviar credenciales
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

@@ -10,6 +10,9 @@ import AdminSettings from '@/pages/AdminSettings';
 import AdminAudit from '@/pages/AdminAudit';
 import AdminTramites from '@/pages/AdminTramites';
 import AdminEmail from '@/pages/AdminEmail';
+import AdminEmpresas from '@/pages/AdminEmpresas';
+import AdminEmpresaDetail from '@/pages/AdminEmpresaDetail';
+import CompanyDashboard from '@/pages/CompanyDashboard';
 import AdminLayout from '@/components/AdminLayout';
 import { Toaster } from 'sonner';
 
@@ -30,7 +33,7 @@ function AppRoutes() {
         path="/"
         element={
           user
-            ? <Navigate to={user.role === 'admin' ? '/admin/clients' : '/dashboard'} replace />
+            ? <Navigate to={user.role === 'admin' ? '/admin/clients' : user.role === 'company' ? '/empresa' : '/dashboard'} replace />
             : <LandingPage />
         }
       />
@@ -38,7 +41,7 @@ function AppRoutes() {
         path="/login"
         element={
           user
-            ? <Navigate to={user.role === 'admin' ? '/admin/clients' : '/dashboard'} replace />
+            ? <Navigate to={user.role === 'admin' ? '/admin/clients' : user.role === 'company' ? '/empresa' : '/dashboard'} replace />
             : <AuthPage />
         }
       />
@@ -61,11 +64,21 @@ function AppRoutes() {
         <Route index element={<Navigate to="clients" replace />} />
         <Route path="clients" element={<AdminClients />} />
         <Route path="clients/:clientId" element={<AdminClientDetail />} />
+        <Route path="empresas" element={<AdminEmpresas />} />
+        <Route path="empresas/:companyId" element={<AdminEmpresaDetail />} />
         <Route path="tramites" element={<AdminTramites />} />
         <Route path="email" element={<AdminEmail />} />
         <Route path="audit" element={<AdminAudit />} />
         <Route path="settings" element={<AdminSettings />} />
       </Route>
+      <Route
+        path="/empresa"
+        element={
+          <ProtectedRoute requiredRole="company">
+            <CompanyDashboard />
+          </ProtectedRoute>
+        }
+      />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

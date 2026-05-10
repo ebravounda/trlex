@@ -19,6 +19,8 @@ from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from typing import Optional, List
 import smtplib
+import random
+import string
 import zipfile
 import io
 from email.mime.text import MIMEText
@@ -111,6 +113,15 @@ async def get_current_user(request: Request):
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         if payload.get("type") != "access":
             raise HTTPException(status_code=401, detail="Token invalido")
+        role = payload.get("role", "")
+        if role == "company":
+            company = await db.companies.find_one({"_id": ObjectId(payload["sub"])})
+            if not company:
+                raise HTTPException(status_code=401, detail="Empresa no encontrada")
+            company["_id"] = str(company["_id"])
+            company.pop("password_hash", None)
+            company["role"] = "company"
+            return company
         user = await db.users.find_one({"_id": ObjectId(payload["sub"])})
         if not user:
             raise HTTPException(status_code=401, detail="Usuario no encontrado")
@@ -126,6 +137,13 @@ async def get_current_user(request: Request):
 async def require_admin(request: Request):
     user = await get_current_user(request)
     if user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    return user
+
+
+async def require_company(request: Request):
+    user = await get_current_user(request)
+    if user.get("role") != "company":
         raise HTTPException(status_code=403, detail="Acceso denegado")
     return user
 
@@ -205,6 +223,55 @@ class ChangePasswordInput(BaseModel):
 
 class SendEmailInput(BaseModel):
     message: str
+
+
+class CompanyCreateInput(BaseModel):
+    name: str
+    cif_nif: str
+    email: str
+    phone: str = ""
+    address: str = ""
+    city: str = ""
+    contact_person: str = ""
+
+
+class CompanyUpdateInput(BaseModel):
+    name: str = ""
+    email: str = ""
+    phone: str = ""
+    address: str = ""
+    city: str = ""
+    contact_person: str = ""
+
+
+class CompanyWorkerInput(BaseModel):
+    name: str
+    nie: str = ""
+    passport_number: str = ""
+    phone: str = ""
+    email: str = ""
+    nationality: str = ""
+
+
+class CompanyTramiteInput(BaseModel):
+    country: str
+    tramite_id: str
+    status: str = "pendiente"
+    notes: str = ""
+
+
+class CompanyTramiteUpdateInput(BaseModel):
+    status: str
+    notes: str = ""
+
+
+class CompanySendCredentialsInput(BaseModel):
+    email: str = ""
+
+
+def generate_company_password(length=10):
+    chars = string.digits + string.ascii_letters
+    return ''.join(random.choices(chars, k=length))
 
 
 # --- Auth Routes ---
@@ -1292,10 +1359,632 @@ def send_admin_email_to_client(client_email: str, client_name: str, message: str
         logger.error(f"Error enviando email al cliente: {e}")
 
 
+# --- Company credentials email (background task) ---
+def send_company_credentials_email(to_email: str, company_name: str, cif_nif: str, password: str):
+    try:
+        import pymongo
+        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
+        sync_db = sync_client[os.environ['DB_NAME']]
+        settings = sync_db.settings.find_one({"type": "smtp"})
+        sync_client.close()
+
+        if not settings or not settings.get("smtp_host"):
+            logger.info("SMTP no configurado, credenciales no enviadas")
+            return
+
+        msg = MIMEMultipart()
+        msg["From"] = settings["from_email"]
+        msg["To"] = to_email
+        msg["Subject"] = f"Tramilex - Credenciales de acceso para {company_name}"
+
+        body = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0f172a;">Bienvenido a Tramilex</h2>
+            <p>Hola,</p>
+            <p>Se ha creado una cuenta para la empresa <strong>{company_name}</strong> en la plataforma Tramilex.</p>
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; padding: 20px; margin: 16px 0; border-radius: 8px;">
+                <p style="margin: 0 0 8px 0;"><strong>Usuario (CIF/NIF):</strong> {cif_nif}</p>
+                <p style="margin: 0;"><strong>Contrasena:</strong> {password}</p>
+            </div>
+            <p>Accede a la plataforma en: <a href="https://tramilex.goroky.es/login">tramilex.goroky.es/login</a></p>
+            <p style="color: #64748b; font-size: 12px; margin-top: 24px;">
+                Este mensaje fue enviado automaticamente por Tramilex.<br>
+                No respondas a este correo directamente.
+            </p>
+        </div>
+        """
+        msg.attach(MIMEText(body, "html"))
+
+        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
+        server.starttls()
+        server.login(settings["smtp_user"], settings["smtp_password"])
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"Credenciales enviadas a {to_email} para {company_name}")
+        return True
+    except Exception as e:
+        logger.error(f"Error enviando credenciales: {e}")
+        return False
+
+
+# ============================
+# --- Company Routes (Admin) ---
+# ============================
+
+@api_router.post("/companies")
+async def create_company(body: CompanyCreateInput, user=Depends(require_admin)):
+    cif_nif = body.cif_nif.strip().upper()
+    if not cif_nif or not body.name.strip():
+        raise HTTPException(status_code=400, detail="Nombre y CIF/NIF son obligatorios")
+
+    existing = await db.companies.find_one({"cif_nif": cif_nif})
+    if existing:
+        raise HTTPException(status_code=400, detail="Ya existe una empresa con ese CIF/NIF")
+
+    password = generate_company_password()
+    company_doc = {
+        "name": body.name.strip(),
+        "cif_nif": cif_nif,
+        "email": body.email.strip().lower(),
+        "phone": body.phone.strip(),
+        "address": body.address.strip(),
+        "city": body.city.strip(),
+        "contact_person": body.contact_person.strip(),
+        "password_hash": hash_password(password),
+        "password_plain": password,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.companies.insert_one(company_doc)
+    company_id = str(result.inserted_id)
+
+    await log_audit("company_created", user["_id"], user.get("name", ""),
+                    {"company_id": company_id, "company_name": body.name, "cif_nif": cif_nif})
+
+    return {
+        "id": company_id,
+        "name": body.name.strip(),
+        "cif_nif": cif_nif,
+        "email": body.email.strip().lower(),
+        "password": password,
+        "message": "Empresa creada exitosamente"
+    }
+
+
+@api_router.get("/companies")
+async def list_companies(user=Depends(require_admin)):
+    companies = []
+    async for c in db.companies.find().sort("created_at", -1):
+        worker_count = await db.company_workers.count_documents({"company_id": str(c["_id"])})
+        tramite_count = await db.company_tramites.count_documents({"company_id": str(c["_id"])})
+        companies.append({
+            "id": str(c["_id"]),
+            "name": c.get("name", ""),
+            "cif_nif": c.get("cif_nif", ""),
+            "email": c.get("email", ""),
+            "phone": c.get("phone", ""),
+            "contact_person": c.get("contact_person", ""),
+            "worker_count": worker_count,
+            "tramite_count": tramite_count,
+            "created_at": c.get("created_at", "")
+        })
+    return companies
+
+
+@api_router.get("/companies/{company_id}")
+async def get_company(company_id: str, user=Depends(require_admin)):
+    try:
+        c = await db.companies.find_one({"_id": ObjectId(company_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    if not c:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    workers = []
+    async for w in db.company_workers.find({"company_id": company_id}).sort("created_at", -1):
+        doc_count = await db.company_documents.count_documents({"worker_id": str(w["_id"]), "is_deleted": False})
+        workers.append({
+            "id": str(w["_id"]),
+            "name": w.get("name", ""),
+            "nie": w.get("nie", ""),
+            "passport_number": w.get("passport_number", ""),
+            "phone": w.get("phone", ""),
+            "email": w.get("email", ""),
+            "nationality": w.get("nationality", ""),
+            "doc_count": doc_count,
+            "created_at": w.get("created_at", "")
+        })
+
+    tramites = []
+    async for t in db.company_tramites.find({"company_id": company_id}).sort("created_at", -1):
+        tramite_name = ""
+        base = get_tramite_docs(t.get("country", ""), t.get("tramite_id", ""))
+        if base:
+            tramite_name = base.get("name", t.get("tramite_id", ""))
+        tramites.append({
+            "id": str(t["_id"]),
+            "country": t.get("country", ""),
+            "tramite_id": t.get("tramite_id", ""),
+            "tramite_name": tramite_name,
+            "status": t.get("status", "pendiente"),
+            "notes": t.get("notes", ""),
+            "created_at": t.get("created_at", "")
+        })
+
+    email_history = []
+    async for e in db.company_emails.find({"company_id": company_id}).sort("sent_at", -1):
+        email_history.append({
+            "id": str(e["_id"]),
+            "to_email": e.get("to_email", ""),
+            "type": e.get("type", "credentials"),
+            "sent_at": e.get("sent_at", ""),
+            "status": e.get("status", "sent")
+        })
+
+    return {
+        "id": str(c["_id"]),
+        "name": c.get("name", ""),
+        "cif_nif": c.get("cif_nif", ""),
+        "email": c.get("email", ""),
+        "phone": c.get("phone", ""),
+        "address": c.get("address", ""),
+        "city": c.get("city", ""),
+        "contact_person": c.get("contact_person", ""),
+        "password_plain": c.get("password_plain", ""),
+        "workers": workers,
+        "tramites": tramites,
+        "email_history": email_history,
+        "created_at": c.get("created_at", "")
+    }
+
+
+@api_router.put("/companies/{company_id}")
+async def update_company(company_id: str, body: CompanyUpdateInput, user=Depends(require_admin)):
+    update_fields = {}
+    if body.name: update_fields["name"] = body.name.strip()
+    if body.email: update_fields["email"] = body.email.strip().lower()
+    if body.phone: update_fields["phone"] = body.phone.strip()
+    if body.address: update_fields["address"] = body.address.strip()
+    if body.city: update_fields["city"] = body.city.strip()
+    if body.contact_person: update_fields["contact_person"] = body.contact_person.strip()
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No hay campos para actualizar")
+
+    try:
+        result = await db.companies.update_one({"_id": ObjectId(company_id)}, {"$set": update_fields})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    await log_audit("company_updated", user["_id"], user.get("name", ""),
+                    {"company_id": company_id, "fields": list(update_fields.keys())})
+    return {"message": "Empresa actualizada"}
+
+
+@api_router.delete("/companies/{company_id}")
+async def delete_company(company_id: str, user=Depends(require_admin)):
+    try:
+        company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    await db.company_workers.delete_many({"company_id": company_id})
+    await db.company_documents.update_many({"company_id": company_id}, {"$set": {"is_deleted": True}})
+    await db.company_tramites.delete_many({"company_id": company_id})
+    await db.company_emails.delete_many({"company_id": company_id})
+    await db.companies.delete_one({"_id": ObjectId(company_id)})
+
+    await log_audit("company_deleted", user["_id"], user.get("name", ""),
+                    {"company_id": company_id, "company_name": company.get("name", "")})
+    return {"message": "Empresa eliminada"}
+
+
+# --- Company Workers ---
+@api_router.post("/companies/{company_id}/workers")
+async def add_worker(company_id: str, body: CompanyWorkerInput, user=Depends(require_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    worker_doc = {
+        "company_id": company_id,
+        "name": body.name.strip(),
+        "nie": body.nie.strip(),
+        "passport_number": body.passport_number.strip(),
+        "phone": body.phone.strip(),
+        "email": body.email.strip().lower(),
+        "nationality": body.nationality.strip(),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.company_workers.insert_one(worker_doc)
+
+    await log_audit("worker_added", user["_id"], user.get("name", ""),
+                    {"company_id": company_id, "worker_name": body.name, "worker_id": str(result.inserted_id)})
+    return {"id": str(result.inserted_id), "message": "Trabajador agregado"}
+
+
+@api_router.put("/companies/{company_id}/workers/{worker_id}")
+async def update_worker(company_id: str, worker_id: str, body: CompanyWorkerInput, user=Depends(require_admin)):
+    update_fields = {
+        "name": body.name.strip(),
+        "nie": body.nie.strip(),
+        "passport_number": body.passport_number.strip(),
+        "phone": body.phone.strip(),
+        "email": body.email.strip().lower(),
+        "nationality": body.nationality.strip(),
+    }
+    try:
+        result = await db.company_workers.update_one(
+            {"_id": ObjectId(worker_id), "company_id": company_id}, {"$set": update_fields})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+    return {"message": "Trabajador actualizado"}
+
+
+@api_router.delete("/companies/{company_id}/workers/{worker_id}")
+async def delete_worker(company_id: str, worker_id: str, user=Depends(require_admin)):
+    try:
+        result = await db.company_workers.delete_one({"_id": ObjectId(worker_id), "company_id": company_id})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+    await db.company_documents.update_many({"worker_id": worker_id}, {"$set": {"is_deleted": True}})
+    return {"message": "Trabajador eliminado"}
+
+
+# --- Company Worker Documents ---
+@api_router.post("/companies/{company_id}/workers/{worker_id}/documents/upload")
+async def upload_worker_document(
+    company_id: str, worker_id: str,
+    file: UploadFile = File(...),
+    category: str = Form("otros"),
+    uploaded_by: str = Form("admin"),
+    user=Depends(get_current_user)
+):
+    if user.get("role") not in ["admin", "company"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    worker = await db.company_workers.find_one({"_id": ObjectId(worker_id), "company_id": company_id})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+
+    content = await file.read()
+    MAX_SIZE = 5 * 1024 * 1024
+    if len(content) > MAX_SIZE:
+        raise HTTPException(status_code=400, detail="El archivo supera los 5MB")
+
+    ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
+    stored_name = f"company_{company_id}/worker_{worker_id}/{uuid.uuid4().hex}.{ext}"
+    content_type = file.content_type or "application/octet-stream"
+
+    put_object(stored_name, content, content_type)
+
+    doc = {
+        "company_id": company_id,
+        "worker_id": worker_id,
+        "filename": stored_name,
+        "original_filename": file.filename,
+        "display_name": file.filename,
+        "content_type": content_type,
+        "size": len(content),
+        "category": category,
+        "status": "pending_review",
+        "uploaded_by": uploaded_by,
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "is_deleted": False
+    }
+    result = await db.company_documents.insert_one(doc)
+
+    return {
+        "id": str(result.inserted_id),
+        "filename": file.filename,
+        "message": "Documento subido exitosamente"
+    }
+
+
+@api_router.get("/companies/{company_id}/workers/{worker_id}/documents")
+async def list_worker_documents(company_id: str, worker_id: str, user=Depends(get_current_user)):
+    if user.get("role") not in ["admin", "company"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    docs = []
+    async for d in db.company_documents.find(
+        {"worker_id": worker_id, "company_id": company_id, "is_deleted": False}
+    ).sort("uploaded_at", -1):
+        docs.append({
+            "id": str(d["_id"]),
+            "original_filename": d.get("original_filename", ""),
+            "display_name": d.get("display_name", d.get("original_filename", "")),
+            "content_type": d.get("content_type", ""),
+            "size": d.get("size", 0),
+            "category": d.get("category", "otros"),
+            "status": d.get("status", "pending_review"),
+            "uploaded_by": d.get("uploaded_by", ""),
+            "uploaded_at": d.get("uploaded_at", "")
+        })
+    return docs
+
+
+@api_router.get("/company-documents/{doc_id}/download")
+async def download_company_document(doc_id: str, user=Depends(get_current_user)):
+    if user.get("role") not in ["admin", "company"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    try:
+        doc = await db.company_documents.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    data, ct = get_object(doc["filename"])
+    return FastAPIResponse(content=data, media_type=ct, headers={
+        "Content-Disposition": f'attachment; filename="{doc.get("original_filename", "document")}"'
+    })
+
+
+@api_router.put("/company-documents/{doc_id}/status")
+async def update_company_doc_status(doc_id: str, body: DocumentStatusUpdate, user=Depends(require_admin)):
+    if body.status not in ["pending_review", "reviewed"]:
+        raise HTTPException(status_code=400, detail="Estado invalido")
+    try:
+        result = await db.company_documents.update_one(
+            {"_id": ObjectId(doc_id), "is_deleted": False},
+            {"$set": {"status": body.status}}
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    return {"message": "Estado actualizado", "status": body.status}
+
+
+@api_router.delete("/company-documents/{doc_id}")
+async def delete_company_document(doc_id: str, user=Depends(require_admin)):
+    try:
+        result = await db.company_documents.update_one(
+            {"_id": ObjectId(doc_id)},
+            {"$set": {"is_deleted": True}}
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    return {"message": "Documento eliminado"}
+
+
+@api_router.get("/companies/{company_id}/workers/{worker_id}/documents/download-all")
+async def download_all_worker_documents(company_id: str, worker_id: str, user=Depends(require_admin)):
+    worker = await db.company_workers.find_one({"_id": ObjectId(worker_id), "company_id": company_id})
+    if not worker:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+
+    docs = []
+    async for d in db.company_documents.find({"worker_id": worker_id, "company_id": company_id, "is_deleted": False}):
+        docs.append(d)
+
+    if not docs:
+        raise HTTPException(status_code=404, detail="No hay documentos para descargar")
+
+    zip_buffer = io.BytesIO()
+    with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zf:
+        for d in docs:
+            try:
+                data, _ = get_object(d["filename"])
+                zf.writestr(d.get("original_filename", "document"), data)
+            except Exception:
+                continue
+
+    zip_buffer.seek(0)
+    worker_name = worker.get("name", "trabajador").replace(" ", "_")
+    return StreamingResponse(
+        zip_buffer,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="documentos_{worker_name}.zip"'}
+    )
+
+
+# --- Company Tramites ---
+@api_router.post("/companies/{company_id}/tramites")
+async def assign_company_tramite(company_id: str, body: CompanyTramiteInput, user=Depends(require_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    tramite_doc = {
+        "company_id": company_id,
+        "country": body.country,
+        "tramite_id": body.tramite_id,
+        "status": body.status,
+        "notes": body.notes,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.company_tramites.insert_one(tramite_doc)
+
+    await log_audit("company_tramite_assigned", user["_id"], user.get("name", ""),
+                    {"company_id": company_id, "tramite_id": body.tramite_id})
+    return {"id": str(result.inserted_id), "message": "Tramite asignado"}
+
+
+@api_router.put("/companies/{company_id}/tramites/{tramite_id}")
+async def update_company_tramite(company_id: str, tramite_id: str, body: CompanyTramiteUpdateInput, user=Depends(require_admin)):
+    try:
+        result = await db.company_tramites.update_one(
+            {"_id": ObjectId(tramite_id), "company_id": company_id},
+            {"$set": {"status": body.status, "notes": body.notes}}
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Tramite no encontrado")
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Tramite no encontrado")
+    return {"message": "Tramite actualizado"}
+
+
+@api_router.delete("/companies/{company_id}/tramites/{tramite_id}")
+async def delete_company_tramite(company_id: str, tramite_id: str, user=Depends(require_admin)):
+    try:
+        result = await db.company_tramites.delete_one({"_id": ObjectId(tramite_id), "company_id": company_id})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Tramite no encontrado")
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Tramite no encontrado")
+    return {"message": "Tramite eliminado"}
+
+
+# --- Company Credentials & Email ---
+@api_router.post("/companies/{company_id}/send-credentials")
+async def send_credentials(company_id: str, body: CompanySendCredentialsInput, background_tasks: BackgroundTasks, user=Depends(require_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    to_email = body.email.strip() if body.email.strip() else company.get("email", "")
+    if not to_email:
+        raise HTTPException(status_code=400, detail="No hay correo de destino")
+
+    password = company.get("password_plain", "")
+    if not password:
+        raise HTTPException(status_code=400, detail="No se encontro la contrasena de la empresa")
+
+    background_tasks.add_task(
+        send_company_credentials_email,
+        to_email, company.get("name", ""), company.get("cif_nif", ""), password
+    )
+
+    await db.company_emails.insert_one({
+        "company_id": company_id,
+        "to_email": to_email,
+        "type": "credentials",
+        "sent_at": datetime.now(timezone.utc).isoformat(),
+        "status": "sent"
+    })
+
+    await log_audit("company_credentials_sent", user["_id"], user.get("name", ""),
+                    {"company_id": company_id, "to_email": to_email})
+    return {"message": f"Credenciales enviadas a {to_email}"}
+
+
+@api_router.post("/companies/{company_id}/resend-email/{email_id}")
+async def resend_company_email(company_id: str, email_id: str, background_tasks: BackgroundTasks, user=Depends(require_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    try:
+        email_record = await db.company_emails.find_one({"_id": ObjectId(email_id), "company_id": company_id})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Registro de email no encontrado")
+    if not email_record:
+        raise HTTPException(status_code=404, detail="Registro de email no encontrado")
+
+    to_email = email_record.get("to_email", "")
+    password = company.get("password_plain", "")
+
+    background_tasks.add_task(
+        send_company_credentials_email,
+        to_email, company.get("name", ""), company.get("cif_nif", ""), password
+    )
+
+    await db.company_emails.insert_one({
+        "company_id": company_id,
+        "to_email": to_email,
+        "type": "credentials_resend",
+        "sent_at": datetime.now(timezone.utc).isoformat(),
+        "status": "sent"
+    })
+    return {"message": f"Credenciales reenviadas a {to_email}"}
+
+
+# --- Company Auth (Login) ---
+@api_router.post("/auth/company-login")
+async def company_login(input_data: LoginInput):
+    cif_nif = input_data.email.strip().upper()
+    company = await db.companies.find_one({"cif_nif": cif_nif})
+    if not company or not verify_password(input_data.password, company["password_hash"]):
+        raise HTTPException(status_code=401, detail="CIF/NIF o contrasena incorrectos")
+
+    company_id = str(company["_id"])
+    token = create_access_token(company_id, company.get("email", ""), "company")
+
+    return {
+        "id": company_id,
+        "name": company.get("name", ""),
+        "cif_nif": company.get("cif_nif", ""),
+        "email": company.get("email", ""),
+        "role": "company",
+        "token": token
+    }
+
+
+# --- Company Panel Endpoints ---
+@api_router.get("/company/me")
+async def company_me(user=Depends(require_company)):
+    company_id = user["_id"]
+    c = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not c:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    return {
+        "id": str(c["_id"]),
+        "name": c.get("name", ""),
+        "cif_nif": c.get("cif_nif", ""),
+        "email": c.get("email", ""),
+        "phone": c.get("phone", ""),
+        "role": "company"
+    }
+
+
+@api_router.get("/company/workers")
+async def company_list_workers(user=Depends(require_company)):
+    company_id = user["_id"]
+    workers = []
+    async for w in db.company_workers.find({"company_id": company_id}).sort("created_at", -1):
+        doc_count = await db.company_documents.count_documents({"worker_id": str(w["_id"]), "is_deleted": False})
+        reviewed = await db.company_documents.count_documents({"worker_id": str(w["_id"]), "is_deleted": False, "status": "reviewed"})
+        workers.append({
+            "id": str(w["_id"]),
+            "name": w.get("name", ""),
+            "nie": w.get("nie", ""),
+            "passport_number": w.get("passport_number", ""),
+            "phone": w.get("phone", ""),
+            "doc_count": doc_count,
+            "reviewed_count": reviewed,
+            "created_at": w.get("created_at", "")
+        })
+    return workers
+
+
+@api_router.get("/company/tramites")
+async def company_list_tramites(user=Depends(require_company)):
+    company_id = user["_id"]
+    tramites = []
+    async for t in db.company_tramites.find({"company_id": company_id}).sort("created_at", -1):
+        tramite_name = ""
+        base = get_tramite_docs(t.get("country", ""), t.get("tramite_id", ""))
+        if base:
+            tramite_name = base.get("name", t.get("tramite_id", ""))
+        tramites.append({
+            "id": str(t["_id"]),
+            "country": t.get("country", ""),
+            "tramite_id": t.get("tramite_id", ""),
+            "tramite_name": tramite_name,
+            "status": t.get("status", "pendiente"),
+            "notes": t.get("notes", ""),
+            "created_at": t.get("created_at", "")
+        })
+    return tramites
+
+
 # --- Startup ---
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
+    await db.companies.create_index("cif_nif", unique=True)
 
     # Seed main admin
     admin_email = os.environ.get("ADMIN_EMAIL", "malcafuz@tramilex.es")

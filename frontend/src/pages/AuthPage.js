@@ -32,14 +32,19 @@ function formatApiError(detail) {
 export default function AuthPage() {
   const [searchParams] = useSearchParams();
   const [isLogin, setIsLogin] = useState(searchParams.get('mode') !== 'register');
+  const [isCompanyLogin, setIsCompanyLogin] = useState(false);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
-  const { login, register } = useAuth();
+  const { login, companyLogin, register } = useAuth();
   const navigate = useNavigate();
 
   // Login state
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
+
+  // Company login state
+  const [companyCif, setCompanyCif] = useState('');
+  const [companyPassword, setCompanyPassword] = useState('');
 
   // Register state
   const [regForm, setRegForm] = useState({
@@ -67,6 +72,20 @@ export default function AuthPage() {
       const user = await login(loginEmail, loginPassword);
       toast.success('Bienvenido');
       navigate(user.role === 'admin' ? '/admin/clients' : '/dashboard');
+    } catch (err) {
+      toast.error(formatApiError(err.response?.data?.detail));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCompanyLogin = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      await companyLogin(companyCif, companyPassword);
+      toast.success('Bienvenido');
+      navigate('/empresa');
     } catch (err) {
       toast.error(formatApiError(err.response?.data?.detail));
     } finally {
@@ -106,56 +125,125 @@ export default function AuthPage() {
               <h1 className="text-2xl font-bold tracking-tight text-slate-900 mb-1" style={{ fontFamily: 'Manrope, sans-serif' }}>
                 Iniciar sesion
               </h1>
-              <p className="text-sm text-slate-500 mb-8">
+              <p className="text-sm text-slate-500 mb-6">
                 Accede a tu cuenta para gestionar tus documentos
               </p>
 
-              <form onSubmit={handleLogin} className="space-y-5">
-                <div>
-                  <Label htmlFor="login-email" className="text-slate-700 text-sm font-medium">Email</Label>
-                  <Input
-                    id="login-email"
-                    type="email"
-                    value={loginEmail}
-                    onChange={e => setLoginEmail(e.target.value)}
-                    placeholder="tu@email.com"
-                    className="mt-1.5 h-10 bg-white border-slate-300 focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
-                    data-testid="login-email-input"
-                    required
-                  />
-                </div>
-                <div>
-                  <Label htmlFor="login-password" className="text-slate-700 text-sm font-medium">Contrasena</Label>
-                  <div className="relative mt-1.5">
+              {/* Login type toggle */}
+              <div className="flex gap-2 mb-6">
+                <button
+                  type="button"
+                  onClick={() => setIsCompanyLogin(false)}
+                  className={`flex-1 flex items-center justify-center gap-2 h-9 rounded-md border text-sm font-medium transition-colors ${!isCompanyLogin ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+                  data-testid="login-persona-tab"
+                >
+                  <User className="w-4 h-4" /> Persona / Admin
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsCompanyLogin(true)}
+                  className={`flex-1 flex items-center justify-center gap-2 h-9 rounded-md border text-sm font-medium transition-colors ${isCompanyLogin ? 'bg-slate-900 text-white border-slate-900' : 'bg-white text-slate-600 border-slate-300 hover:bg-slate-50'}`}
+                  data-testid="login-empresa-tab"
+                >
+                  <Building2 className="w-4 h-4" /> Empresa
+                </button>
+              </div>
+
+              {!isCompanyLogin ? (
+                <form onSubmit={handleLogin} className="space-y-5">
+                  <div>
+                    <Label htmlFor="login-email" className="text-slate-700 text-sm font-medium">Email</Label>
                     <Input
-                      id="login-password"
-                      type={showPassword ? 'text' : 'password'}
-                      value={loginPassword}
-                      onChange={e => setLoginPassword(e.target.value)}
-                      placeholder="Tu contrasena"
-                      className="h-10 bg-white border-slate-300 focus:ring-2 focus:ring-slate-900 focus:border-slate-900 pr-10"
-                      data-testid="login-password-input"
+                      id="login-email"
+                      type="email"
+                      value={loginEmail}
+                      onChange={e => setLoginEmail(e.target.value)}
+                      placeholder="tu@email.com"
+                      className="mt-1.5 h-10 bg-white border-slate-300 focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                      data-testid="login-email-input"
                       required
                     />
-                    <button
-                      type="button"
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
-                      onClick={() => setShowPassword(!showPassword)}
-                      data-testid="toggle-password-btn"
-                    >
-                      {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
                   </div>
-                </div>
-                <Button
-                  type="submit"
-                  className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white rounded-md font-medium"
-                  disabled={loading}
-                  data-testid="login-submit-btn"
-                >
-                  {loading ? 'Entrando...' : 'Iniciar sesion'}
-                </Button>
-              </form>
+                  <div>
+                    <Label htmlFor="login-password" className="text-slate-700 text-sm font-medium">Contrasena</Label>
+                    <div className="relative mt-1.5">
+                      <Input
+                        id="login-password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={loginPassword}
+                        onChange={e => setLoginPassword(e.target.value)}
+                        placeholder="Tu contrasena"
+                        className="h-10 bg-white border-slate-300 focus:ring-2 focus:ring-slate-900 focus:border-slate-900 pr-10"
+                        data-testid="login-password-input"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        onClick={() => setShowPassword(!showPassword)}
+                        data-testid="toggle-password-btn"
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white rounded-md font-medium"
+                    disabled={loading}
+                    data-testid="login-submit-btn"
+                  >
+                    {loading ? 'Entrando...' : 'Iniciar sesion'}
+                  </Button>
+                </form>
+              ) : (
+                <form onSubmit={handleCompanyLogin} className="space-y-5">
+                  <div>
+                    <Label htmlFor="company-cif" className="text-slate-700 text-sm font-medium">CIF/NIF de la empresa</Label>
+                    <Input
+                      id="company-cif"
+                      type="text"
+                      value={companyCif}
+                      onChange={e => setCompanyCif(e.target.value)}
+                      placeholder="B12345678"
+                      className="mt-1.5 h-10 bg-white border-slate-300 focus:ring-2 focus:ring-slate-900 focus:border-slate-900"
+                      style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}
+                      data-testid="company-cif-input"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="company-password" className="text-slate-700 text-sm font-medium">Contrasena</Label>
+                    <div className="relative mt-1.5">
+                      <Input
+                        id="company-password"
+                        type={showPassword ? 'text' : 'password'}
+                        value={companyPassword}
+                        onChange={e => setCompanyPassword(e.target.value)}
+                        placeholder="Contrasena proporcionada"
+                        className="h-10 bg-white border-slate-300 focus:ring-2 focus:ring-slate-900 focus:border-slate-900 pr-10"
+                        data-testid="company-password-input"
+                        required
+                      />
+                      <button
+                        type="button"
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        onClick={() => setShowPassword(!showPassword)}
+                      >
+                        {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                  <Button
+                    type="submit"
+                    className="w-full h-10 bg-slate-900 hover:bg-slate-800 text-white rounded-md font-medium"
+                    disabled={loading}
+                    data-testid="company-login-submit-btn"
+                  >
+                    {loading ? 'Entrando...' : 'Acceso empresa'}
+                  </Button>
+                </form>
+              )}
 
               <p className="mt-6 text-sm text-slate-500 text-center">
                 No tienes cuenta?{' '}
