@@ -62,7 +62,7 @@ export default function AdminEmpresaDetail() {
   const [signRequests, setSignRequests] = useState([]);
   const [uploadingSignReq, setUploadingSignReq] = useState(false);
 
-  const [workerForm, setWorkerForm] = useState({ name: '', last_name: '', nie: '', dni: '', passport_number: '', rut: '', phone: '', email: '', nationality: '' });
+  const [workerForm, setWorkerForm] = useState({ name: '', last_name: '', identification: '', phone: '', email: '', nationality: '' });
   const [tramiteForm, setTramiteForm] = useState({ country: '', tramite_id: '', notes: '' });
 
   const fetchCompany = useCallback(async () => {
@@ -487,7 +487,7 @@ export default function AdminEmpresaDetail() {
                     <div>
                       <p className="text-sm font-semibold text-slate-800">{w.name} {w.last_name || ''}</p>
                       <p className="text-xs text-slate-500">
-                        {w.nie && `NIE: ${w.nie} `}{w.dni && `DNI: ${w.dni} `}{w.passport_number && `Pass: ${w.passport_number} `}
+                        {w.identification && `ID: ${w.identification} `}
                         {w.doc_count} doc(s)
                         {w.signed_count > 0 && <span className="text-emerald-600 ml-1">({w.signed_count} firmado(s))</span>}
                       </p>
@@ -507,10 +507,9 @@ export default function AdminEmpresaDetail() {
                 {expandedWorker === w.id && (
                   <div className="border-t border-slate-200 p-4 bg-slate-50/50">
                     {/* Worker details */}
-                    {(w.dni || w.rut || w.origin_country || w.residence_country || w.father_name || w.mother_name || w.children?.length > 0) && (
+                    {(w.identification || w.origin_country || w.residence_country || w.father_name || w.mother_name || w.children?.length > 0) && (
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-600 mb-3 p-3 bg-white border border-slate-200 rounded-lg">
-                        {w.dni && <span><strong>DNI:</strong> {w.dni}</span>}
-                        {w.rut && <span><strong>RUT:</strong> {w.rut}</span>}
+                        {w.identification && <span><strong>DNI/NIE/Pasaporte/RUT:</strong> {w.identification}</span>}
                         {w.phone && <span><strong>Tel:</strong> {w.phone}</span>}
                         {w.email && <span><strong>Email:</strong> {w.email}</span>}
                         {w.address && <span><strong>Dir:</strong> {w.address}</span>}
@@ -630,14 +629,7 @@ export default function AdminEmpresaDetail() {
               <Input placeholder="Nombres *" value={workerForm.name} onChange={e => setWorkerForm({...workerForm, name: e.target.value})} data-testid="worker-name-input" />
               <Input placeholder="Apellidos" value={workerForm.last_name || ''} onChange={e => setWorkerForm({...workerForm, last_name: e.target.value})} />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Input placeholder="NIE" value={workerForm.nie} onChange={e => setWorkerForm({...workerForm, nie: e.target.value})} style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
-              <Input placeholder="DNI" value={workerForm.dni || ''} onChange={e => setWorkerForm({...workerForm, dni: e.target.value})} style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <Input placeholder="Pasaporte" value={workerForm.passport_number} onChange={e => setWorkerForm({...workerForm, passport_number: e.target.value})} style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
-              <Input placeholder="RUT" value={workerForm.rut || ''} onChange={e => setWorkerForm({...workerForm, rut: e.target.value})} style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
-            </div>
+            <Input placeholder="DNI / NIE / Pasaporte / RUT" value={workerForm.identification || ''} onChange={e => setWorkerForm({...workerForm, identification: e.target.value})} style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} data-testid="worker-identification-input" />
             <div className="grid grid-cols-2 gap-3">
               <Input placeholder="Telefono" value={workerForm.phone} onChange={e => setWorkerForm({...workerForm, phone: e.target.value})} />
               <Input placeholder="Email" value={workerForm.email} onChange={e => setWorkerForm({...workerForm, email: e.target.value})} />

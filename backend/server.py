@@ -247,10 +247,7 @@ class CompanyUpdateInput(BaseModel):
 class CompanyWorkerInput(BaseModel):
     name: str
     last_name: str = ""
-    nie: str = ""
-    dni: str = ""
-    passport_number: str = ""
-    rut: str = ""
+    identification: str = ""
     phone: str = ""
     phone2: str = ""
     email: str = ""
@@ -1497,10 +1494,7 @@ async def get_company(company_id: str, user=Depends(require_admin)):
             "id": str(w["_id"]),
             "name": w.get("name", ""),
             "last_name": w.get("last_name", ""),
-            "nie": w.get("nie", ""),
-            "dni": w.get("dni", ""),
-            "passport_number": w.get("passport_number", ""),
-            "rut": w.get("rut", ""),
+            "identification": w.get("identification", w.get("nie", w.get("dni", w.get("passport_number", w.get("rut", ""))))),
             "phone": w.get("phone", ""),
             "phone2": w.get("phone2", ""),
             "email": w.get("email", ""),
@@ -1621,10 +1615,7 @@ async def add_worker(company_id: str, body: CompanyWorkerInput, user=Depends(get
         "company_id": company_id,
         "name": body.name.strip(),
         "last_name": body.last_name.strip(),
-        "nie": body.nie.strip(),
-        "dni": body.dni.strip(),
-        "passport_number": body.passport_number.strip(),
-        "rut": body.rut.strip(),
+        "identification": body.identification.strip(),
         "phone": body.phone.strip(),
         "phone2": body.phone2.strip(),
         "email": body.email.strip().lower(),
@@ -1655,10 +1646,7 @@ async def update_worker(company_id: str, worker_id: str, body: CompanyWorkerInpu
     update_fields = {
         "name": body.name.strip(),
         "last_name": body.last_name.strip(),
-        "nie": body.nie.strip(),
-        "dni": body.dni.strip(),
-        "passport_number": body.passport_number.strip(),
-        "rut": body.rut.strip(),
+        "identification": body.identification.strip(),
         "phone": body.phone.strip(),
         "phone2": body.phone2.strip(),
         "email": body.email.strip().lower(),
@@ -2010,10 +1998,7 @@ async def company_list_workers(user=Depends(require_company)):
             "id": str(w["_id"]),
             "name": w.get("name", ""),
             "last_name": w.get("last_name", ""),
-            "nie": w.get("nie", ""),
-            "dni": w.get("dni", ""),
-            "passport_number": w.get("passport_number", ""),
-            "rut": w.get("rut", ""),
+            "identification": w.get("identification", w.get("nie", w.get("dni", w.get("passport_number", w.get("rut", ""))))),
             "phone": w.get("phone", ""),
             "phone2": w.get("phone2", ""),
             "email": w.get("email", ""),

@@ -54,7 +54,7 @@ function getFileIcon(ct) {
 }
 
 const emptyWorker = {
-  name: '', last_name: '', nie: '', dni: '', passport_number: '', rut: '',
+  name: '', last_name: '', identification: '',
   phone: '', phone2: '', email: '', address: '', nationality: '',
   origin_country: '', residence_country: '', father_name: '', mother_name: '', children: []
 };
@@ -349,7 +349,7 @@ export default function CompanyDashboard() {
                       <div>
                         <p className="text-sm font-semibold text-slate-800">{w.name} {w.last_name}</p>
                         <p className="text-xs text-slate-500">
-                          {w.nie && `NIE: ${w.nie} `}{w.passport_number && `Pass: ${w.passport_number} `}
+                          {w.identification && `ID: ${w.identification} `}
                           {w.doc_count} doc(s) - {w.reviewed_count} revisado(s)
                           {w.signed_count > 0 && <span className="text-emerald-600 ml-1">({w.signed_count} firmado(s))</span>}
                         </p>
@@ -370,8 +370,7 @@ export default function CompanyDashboard() {
                     <div className="border-t border-slate-200 p-4 bg-slate-50/50 space-y-4">
                       {/* Worker details */}
                       <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-600">
-                        {w.dni && <span><strong>DNI:</strong> {w.dni}</span>}
-                        {w.rut && <span><strong>RUT:</strong> {w.rut}</span>}
+                        {w.identification && <span><strong>DNI/NIE/Pasaporte/RUT:</strong> {w.identification}</span>}
                         {w.phone && <span><strong>Tel:</strong> {w.phone}</span>}
                         {w.email && <span><strong>Email:</strong> {w.email}</span>}
                         {w.origin_country && <span><strong>Origen:</strong> {w.origin_country}</span>}
@@ -458,25 +457,9 @@ export default function CompanyDashboard() {
                 <Input placeholder="Apellidos" value={workerForm.last_name} onChange={e => updateWorkerField('last_name', e.target.value)} className="h-9 text-sm" />
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs text-slate-600">NIE</Label>
-                <Input placeholder="X1234567A" value={workerForm.nie} onChange={e => updateWorkerField('nie', e.target.value)} className="h-9 text-sm" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
-              </div>
-              <div>
-                <Label className="text-xs text-slate-600">DNI</Label>
-                <Input placeholder="12345678Z" value={workerForm.dni} onChange={e => updateWorkerField('dni', e.target.value)} className="h-9 text-sm" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label className="text-xs text-slate-600">Pasaporte</Label>
-                <Input placeholder="AB1234567" value={workerForm.passport_number} onChange={e => updateWorkerField('passport_number', e.target.value)} className="h-9 text-sm" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
-              </div>
-              <div>
-                <Label className="text-xs text-slate-600">RUT</Label>
-                <Input placeholder="12.345.678-9" value={workerForm.rut} onChange={e => updateWorkerField('rut', e.target.value)} className="h-9 text-sm" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
-              </div>
+            <div>
+              <Label className="text-xs text-slate-600">DNI / NIE / Pasaporte / RUT</Label>
+              <Input placeholder="Numero de identificacion" value={workerForm.identification} onChange={e => updateWorkerField('identification', e.target.value)} className="h-9 text-sm" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} data-testid="worker-identification-input" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
