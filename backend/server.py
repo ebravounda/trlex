@@ -151,7 +151,7 @@ async def require_company(request: Request):
 # --- Document Categories ---
 DOCUMENT_CATEGORIES = [
     "identificacion", "residencia", "trabajo",
-    "resolucion", "contrato", "fiscal", "otros"
+    "resolucion", "contrato", "fiscal", "firmado", "otros"
 ]
 
 
@@ -246,11 +246,21 @@ class CompanyUpdateInput(BaseModel):
 
 class CompanyWorkerInput(BaseModel):
     name: str
+    last_name: str = ""
     nie: str = ""
+    dni: str = ""
     passport_number: str = ""
+    rut: str = ""
     phone: str = ""
+    phone2: str = ""
     email: str = ""
+    address: str = ""
     nationality: str = ""
+    origin_country: str = ""
+    residence_country: str = ""
+    father_name: str = ""
+    mother_name: str = ""
+    children: List[str] = []
 
 
 class CompanyTramiteInput(BaseModel):
@@ -1482,15 +1492,27 @@ async def get_company(company_id: str, user=Depends(require_admin)):
     workers = []
     async for w in db.company_workers.find({"company_id": company_id}).sort("created_at", -1):
         doc_count = await db.company_documents.count_documents({"worker_id": str(w["_id"]), "is_deleted": False})
+        signed_count = await db.company_documents.count_documents({"worker_id": str(w["_id"]), "is_deleted": False, "category": "firmado"})
         workers.append({
             "id": str(w["_id"]),
             "name": w.get("name", ""),
+            "last_name": w.get("last_name", ""),
             "nie": w.get("nie", ""),
+            "dni": w.get("dni", ""),
             "passport_number": w.get("passport_number", ""),
+            "rut": w.get("rut", ""),
             "phone": w.get("phone", ""),
+            "phone2": w.get("phone2", ""),
             "email": w.get("email", ""),
+            "address": w.get("address", ""),
             "nationality": w.get("nationality", ""),
+            "origin_country": w.get("origin_country", ""),
+            "residence_country": w.get("residence_country", ""),
+            "father_name": w.get("father_name", ""),
+            "mother_name": w.get("mother_name", ""),
+            "children": w.get("children", []),
             "doc_count": doc_count,
+            "signed_count": signed_count,
             "created_at": w.get("created_at", "")
         })
 
@@ -1584,7 +1606,13 @@ async def delete_company(company_id: str, user=Depends(require_admin)):
 
 # --- Company Workers ---
 @api_router.post("/companies/{company_id}/workers")
-async def add_worker(company_id: str, body: CompanyWorkerInput, user=Depends(require_admin)):
+async def add_worker(company_id: str, body: CompanyWorkerInput, user=Depends(get_current_user)):
+    if user.get("role") == "company":
+        if user["_id"] != company_id:
+            raise HTTPException(status_code=403, detail="Acceso denegado")
+    elif user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
     company = await db.companies.find_one({"_id": ObjectId(company_id)})
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
@@ -1592,11 +1620,21 @@ async def add_worker(company_id: str, body: CompanyWorkerInput, user=Depends(req
     worker_doc = {
         "company_id": company_id,
         "name": body.name.strip(),
+        "last_name": body.last_name.strip(),
         "nie": body.nie.strip(),
+        "dni": body.dni.strip(),
         "passport_number": body.passport_number.strip(),
+        "rut": body.rut.strip(),
         "phone": body.phone.strip(),
+        "phone2": body.phone2.strip(),
         "email": body.email.strip().lower(),
+        "address": body.address.strip(),
         "nationality": body.nationality.strip(),
+        "origin_country": body.origin_country.strip(),
+        "residence_country": body.residence_country.strip(),
+        "father_name": body.father_name.strip(),
+        "mother_name": body.mother_name.strip(),
+        "children": body.children,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     result = await db.company_workers.insert_one(worker_doc)
@@ -1607,14 +1645,30 @@ async def add_worker(company_id: str, body: CompanyWorkerInput, user=Depends(req
 
 
 @api_router.put("/companies/{company_id}/workers/{worker_id}")
-async def update_worker(company_id: str, worker_id: str, body: CompanyWorkerInput, user=Depends(require_admin)):
+async def update_worker(company_id: str, worker_id: str, body: CompanyWorkerInput, user=Depends(get_current_user)):
+    if user.get("role") == "company":
+        if user["_id"] != company_id:
+            raise HTTPException(status_code=403, detail="Acceso denegado")
+    elif user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
     update_fields = {
         "name": body.name.strip(),
+        "last_name": body.last_name.strip(),
         "nie": body.nie.strip(),
+        "dni": body.dni.strip(),
         "passport_number": body.passport_number.strip(),
+        "rut": body.rut.strip(),
         "phone": body.phone.strip(),
+        "phone2": body.phone2.strip(),
         "email": body.email.strip().lower(),
+        "address": body.address.strip(),
         "nationality": body.nationality.strip(),
+        "origin_country": body.origin_country.strip(),
+        "residence_country": body.residence_country.strip(),
+        "father_name": body.father_name.strip(),
+        "mother_name": body.mother_name.strip(),
+        "children": body.children,
     }
     try:
         result = await db.company_workers.update_one(
@@ -1627,7 +1681,12 @@ async def update_worker(company_id: str, worker_id: str, body: CompanyWorkerInpu
 
 
 @api_router.delete("/companies/{company_id}/workers/{worker_id}")
-async def delete_worker(company_id: str, worker_id: str, user=Depends(require_admin)):
+async def delete_worker(company_id: str, worker_id: str, user=Depends(get_current_user)):
+    if user.get("role") == "company":
+        if user["_id"] != company_id:
+            raise HTTPException(status_code=403, detail="Acceso denegado")
+    elif user.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Acceso denegado")
     try:
         result = await db.company_workers.delete_one({"_id": ObjectId(worker_id), "company_id": company_id})
     except Exception:
@@ -1946,14 +2005,28 @@ async def company_list_workers(user=Depends(require_company)):
     async for w in db.company_workers.find({"company_id": company_id}).sort("created_at", -1):
         doc_count = await db.company_documents.count_documents({"worker_id": str(w["_id"]), "is_deleted": False})
         reviewed = await db.company_documents.count_documents({"worker_id": str(w["_id"]), "is_deleted": False, "status": "reviewed"})
+        signed_count = await db.company_documents.count_documents({"worker_id": str(w["_id"]), "is_deleted": False, "category": "firmado"})
         workers.append({
             "id": str(w["_id"]),
             "name": w.get("name", ""),
+            "last_name": w.get("last_name", ""),
             "nie": w.get("nie", ""),
+            "dni": w.get("dni", ""),
             "passport_number": w.get("passport_number", ""),
+            "rut": w.get("rut", ""),
             "phone": w.get("phone", ""),
+            "phone2": w.get("phone2", ""),
+            "email": w.get("email", ""),
+            "address": w.get("address", ""),
+            "nationality": w.get("nationality", ""),
+            "origin_country": w.get("origin_country", ""),
+            "residence_country": w.get("residence_country", ""),
+            "father_name": w.get("father_name", ""),
+            "mother_name": w.get("mother_name", ""),
+            "children": w.get("children", []),
             "doc_count": doc_count,
             "reviewed_count": reviewed,
+            "signed_count": signed_count,
             "created_at": w.get("created_at", "")
         })
     return workers
@@ -1978,6 +2051,29 @@ async def company_list_tramites(user=Depends(require_company)):
             "created_at": t.get("created_at", "")
         })
     return tramites
+
+
+# --- Admin: Signed Documents from all companies ---
+@api_router.get("/admin/signed-documents")
+async def get_all_signed_documents(user=Depends(require_admin)):
+    docs = []
+    async for d in db.company_documents.find({"category": "firmado", "is_deleted": False}).sort("uploaded_at", -1):
+        worker = await db.company_workers.find_one({"_id": ObjectId(d["worker_id"])})
+        company = await db.companies.find_one({"_id": ObjectId(d["company_id"])})
+        docs.append({
+            "id": str(d["_id"]),
+            "original_filename": d.get("original_filename", ""),
+            "display_name": d.get("display_name", d.get("original_filename", "")),
+            "content_type": d.get("content_type", ""),
+            "size": d.get("size", 0),
+            "status": d.get("status", "pending_review"),
+            "uploaded_at": d.get("uploaded_at", ""),
+            "worker_name": f"{worker.get('name', '')} {worker.get('last_name', '')}".strip() if worker else "Desconocido",
+            "worker_id": d.get("worker_id", ""),
+            "company_name": company.get("name", "Desconocida") if company else "Desconocida",
+            "company_id": d.get("company_id", "")
+        })
+    return docs
 
 
 # --- Startup ---

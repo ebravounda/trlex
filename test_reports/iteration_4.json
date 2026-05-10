@@ -1,0 +1,110 @@
+{
+  "summary": "Completed comprehensive testing of Iteration 4 features for Tramilex. All 10 features tested successfully: Company creates workers with extended fields, company uploads regular and signed documents, document review status visibility, admin signed-documents endpoint, admin sees signed count on workers, and company can delete workers. Backend (16/16 tests passed) and frontend UI flows fully functional.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "POST /api/companies/{id}/workers/{id}/documents/upload",
+        "issue": "Response does not include category field - need to fetch documents list to verify category was saved correctly",
+        "priority": "LOW"
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Dialogs",
+        "issues": ["Console warning: Missing `Description` or `aria-describedby={undefined}` for {DialogContent} - accessibility improvement recommended"]
+      }
+    ]
+  },
+  "passed_tests": [
+    "Company login with CIF/NIF B99887766 and password",
+    "Company login rejects wrong password (401)",
+    "Company creates worker with ALL extended fields (name, last_name, nie, dni, passport, rut, phone, phone2, email, address, origin_country, residence_country, father_name, mother_name, children)",
+    "Company can list workers via GET /api/company/workers",
+    "Extended worker fields are correctly persisted and returned",
+    "Company uploads regular document with category 'identificacion'",
+    "Company uploads signed document with category 'firmado'",
+    "Company can list worker documents with status field",
+    "New documents have 'pending_review' status by default",
+    "Admin can mark document as 'reviewed'",
+    "Company sees reviewed status on documents",
+    "Admin GET /api/admin/signed-documents returns all signed docs across companies",
+    "Signed documents include company_name, worker_name, company_id, worker_id",
+    "Admin company detail shows signed_count for each worker",
+    "Company can delete its own workers",
+    "Existing worker Carlos Garcia Lopez visible with all extended fields"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_iteration4_features.py",
+    "/app/test_reports/pytest/pytest_iteration4.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Upload endpoint response could include category and status fields for better UX - currently returns minimal response",
+    "DialogContent components missing aria-describedby for accessibility - minor improvement"
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iteration4_features.py"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 pytest tests passed)",
+    "frontend": "100% (All UI flows working)"
+  },
+  "test_credentials": {
+    "admin": "malcafuz@tramilex.es / Admin123!",
+    "company": "B99887766 / 1ecGfiRCef (Empresa Test Demo)",
+    "company_id": "6a00780ee55b71e220d78939"
+  },
+  "seed_data_creation": "Test worker TEST_Juan Garcia Lopez created and deleted during testing. Documents uploaded for Carlos Garcia Lopez worker.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Iteration 4 features fully tested. Key endpoints: POST /api/companies/{id}/workers (company can create workers), GET /api/company/workers (company lists own workers), POST /api/companies/{id}/workers/{id}/documents/upload (upload with category param, 'firmado' for signed docs), GET /api/admin/signed-documents (admin gets all signed docs). Worker model has extended fields: name, last_name, nie, dni, passport_number, rut, phone, phone2, email, address, origin_country, residence_country, father_name, mother_name, children. Company login uses CIF/NIF as 'email' parameter in POST /api/auth/company-login.",
+  "features_tested": {
+    "company_worker_creation": [
+      "Company creates workers with POST /api/companies/{id}/workers",
+      "All extended fields supported: name, last_name, nie, dni, passport_number, rut, phone, phone2, email, address, origin_country, residence_country, father_name, mother_name, children",
+      "Company dashboard shows 'Agregar trabajador' button",
+      "Worker form has all required fields"
+    ],
+    "document_upload": [
+      "Company uploads regular documents with category selection",
+      "Company uploads signed documents via 'Subir documento firmado' button (category=firmado)",
+      "Documents stored with pending_review status",
+      "Category selector includes: identificacion, residencia, trabajo, contrato, fiscal, firmado, otros"
+    ],
+    "document_review_status": [
+      "Documents show pending_review or reviewed status",
+      "Admin can mark documents as reviewed",
+      "Company sees document review status"
+    ],
+    "admin_signed_documents": [
+      "GET /api/admin/signed-documents returns all signed docs",
+      "Response includes worker_name, company_name, company_id, worker_id",
+      "Admin company detail shows signed_count on worker rows"
+    ],
+    "worker_deletion": [
+      "Company can delete its own workers",
+      "DELETE /api/companies/{id}/workers/{id} works for company role"
+    ]
+  },
+  "ui_verification": {
+    "company_dashboard": [
+      "Login page has 'Empresa' tab for company login",
+      "Company dashboard shows workers list with doc counts",
+      "Worker expansion shows all extended fields",
+      "'Subir documento' button present",
+      "'Subir documento firmado' button present with green styling",
+      "Category selector dropdown works"
+    ],
+    "admin_empresa_detail": [
+      "Admin can view company detail",
+      "Workers section shows signed_count",
+      "Worker expansion shows all extended fields (DNI, RUT, Tel, Email, Dir, Origen, Residencia, Padre, Madre, Hijos)",
+      "'Descargar Documentos' button for bulk download"
+    ]
+  }
+}

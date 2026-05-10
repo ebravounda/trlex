@@ -20,6 +20,7 @@ const CATEGORIES = [
   { value: "trabajo", label: "Trabajo" },
   { value: "contrato", label: "Contrato" },
   { value: "fiscal", label: "Fiscal" },
+  { value: "firmado", label: "Documento firmado" },
   { value: "otros", label: "Otros" },
 ];
 
@@ -58,7 +59,7 @@ export default function AdminEmpresaDetail() {
   const [uploadingFor, setUploadingFor] = useState(null);
   const [uploadCategory, setUploadCategory] = useState('otros');
 
-  const [workerForm, setWorkerForm] = useState({ name: '', nie: '', passport_number: '', phone: '', email: '', nationality: '' });
+  const [workerForm, setWorkerForm] = useState({ name: '', last_name: '', nie: '', dni: '', passport_number: '', rut: '', phone: '', email: '', nationality: '' });
   const [tramiteForm, setTramiteForm] = useState({ country: '', tramite_id: '', notes: '' });
 
   const fetchCompany = useCallback(async () => {
@@ -354,10 +355,11 @@ export default function AdminEmpresaDetail() {
                       <span className="text-xs font-bold text-slate-600">{w.name.charAt(0).toUpperCase()}</span>
                     </div>
                     <div>
-                      <p className="text-sm font-semibold text-slate-800">{w.name}</p>
+                      <p className="text-sm font-semibold text-slate-800">{w.name} {w.last_name || ''}</p>
                       <p className="text-xs text-slate-500">
-                        {w.nie && `NIE: ${w.nie}`} {w.passport_number && `Pass: ${w.passport_number}`}
-                        {' '}{w.doc_count} doc(s)
+                        {w.nie && `NIE: ${w.nie} `}{w.dni && `DNI: ${w.dni} `}{w.passport_number && `Pass: ${w.passport_number} `}
+                        {w.doc_count} doc(s)
+                        {w.signed_count > 0 && <span className="text-emerald-600 ml-1">({w.signed_count} firmado(s))</span>}
                       </p>
                     </div>
                   </div>
@@ -374,6 +376,21 @@ export default function AdminEmpresaDetail() {
 
                 {expandedWorker === w.id && (
                   <div className="border-t border-slate-200 p-4 bg-slate-50/50">
+                    {/* Worker details */}
+                    {(w.dni || w.rut || w.origin_country || w.residence_country || w.father_name || w.mother_name || w.children?.length > 0) && (
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-600 mb-3 p-3 bg-white border border-slate-200 rounded-lg">
+                        {w.dni && <span><strong>DNI:</strong> {w.dni}</span>}
+                        {w.rut && <span><strong>RUT:</strong> {w.rut}</span>}
+                        {w.phone && <span><strong>Tel:</strong> {w.phone}</span>}
+                        {w.email && <span><strong>Email:</strong> {w.email}</span>}
+                        {w.address && <span><strong>Dir:</strong> {w.address}</span>}
+                        {w.origin_country && <span><strong>Origen:</strong> {w.origin_country}</span>}
+                        {w.residence_country && <span><strong>Residencia:</strong> {w.residence_country}</span>}
+                        {w.father_name && <span><strong>Padre:</strong> {w.father_name}</span>}
+                        {w.mother_name && <span><strong>Madre:</strong> {w.mother_name}</span>}
+                        {w.children?.length > 0 && <span><strong>Hijos:</strong> {w.children.join(', ')}</span>}
+                      </div>
+                    )}
                     {/* Upload area */}
                     <div className="flex items-center gap-3 mb-3">
                       <Select value={uploadCategory} onValueChange={setUploadCategory}>
@@ -408,13 +425,14 @@ export default function AdminEmpresaDetail() {
                     ) : (
                       <div className="space-y-2">
                         {(workerDocs[w.id] || []).map(doc => (
-                          <div key={doc.id} className="flex items-center justify-between bg-white border border-slate-200 rounded-lg p-3">
+                          <div key={doc.id} className={`flex items-center justify-between bg-white border rounded-lg p-3 ${doc.category === 'firmado' ? 'border-emerald-200 bg-emerald-50/30' : 'border-slate-200'}`}>
                             <div className="flex items-center gap-2.5 min-w-0">
                               {getFileIcon(doc.content_type)}
                               <div className="min-w-0">
                                 <p className="text-sm font-medium text-slate-800 truncate">{doc.display_name || doc.original_filename}</p>
-                                <div className="flex items-center gap-2 mt-0.5">
+                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                                   <span className="text-xs text-slate-500">{formatDate(doc.uploaded_at)}</span>
+                                  {doc.category === 'firmado' && <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">Firmado</Badge>}
                                   <Badge className={`text-[10px] ${doc.status === 'reviewed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
                                     {doc.status === 'reviewed' ? 'Revisado' : 'Pendiente'}
                                   </Badge>
@@ -475,14 +493,25 @@ export default function AdminEmpresaDetail() {
 
       {/* Add Worker Dialog */}
       <Dialog open={showAddWorker} onOpenChange={setShowAddWorker}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>Agregar trabajador</DialogTitle></DialogHeader>
           <div className="space-y-3 mt-2">
-            <Input placeholder="Nombre completo *" value={workerForm.name} onChange={e => setWorkerForm({...workerForm, name: e.target.value})} data-testid="worker-name-input" />
-            <Input placeholder="NIE" value={workerForm.nie} onChange={e => setWorkerForm({...workerForm, nie: e.target.value})} />
-            <Input placeholder="Pasaporte" value={workerForm.passport_number} onChange={e => setWorkerForm({...workerForm, passport_number: e.target.value})} />
-            <Input placeholder="Telefono" value={workerForm.phone} onChange={e => setWorkerForm({...workerForm, phone: e.target.value})} />
-            <Input placeholder="Email" value={workerForm.email} onChange={e => setWorkerForm({...workerForm, email: e.target.value})} />
+            <div className="grid grid-cols-2 gap-3">
+              <Input placeholder="Nombres *" value={workerForm.name} onChange={e => setWorkerForm({...workerForm, name: e.target.value})} data-testid="worker-name-input" />
+              <Input placeholder="Apellidos" value={workerForm.last_name || ''} onChange={e => setWorkerForm({...workerForm, last_name: e.target.value})} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Input placeholder="NIE" value={workerForm.nie} onChange={e => setWorkerForm({...workerForm, nie: e.target.value})} style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
+              <Input placeholder="DNI" value={workerForm.dni || ''} onChange={e => setWorkerForm({...workerForm, dni: e.target.value})} style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Input placeholder="Pasaporte" value={workerForm.passport_number} onChange={e => setWorkerForm({...workerForm, passport_number: e.target.value})} style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
+              <Input placeholder="RUT" value={workerForm.rut || ''} onChange={e => setWorkerForm({...workerForm, rut: e.target.value})} style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <Input placeholder="Telefono" value={workerForm.phone} onChange={e => setWorkerForm({...workerForm, phone: e.target.value})} />
+              <Input placeholder="Email" value={workerForm.email} onChange={e => setWorkerForm({...workerForm, email: e.target.value})} />
+            </div>
             <Input placeholder="Nacionalidad" value={workerForm.nationality} onChange={e => setWorkerForm({...workerForm, nationality: e.target.value})} />
             <Button onClick={handleAddWorker} className="w-full bg-slate-900 hover:bg-slate-800" data-testid="submit-worker-btn">
               Agregar trabajador
