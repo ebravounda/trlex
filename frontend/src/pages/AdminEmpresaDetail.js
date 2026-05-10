@@ -388,12 +388,18 @@ export default function AdminEmpresaDetail() {
                   </div>
                 </div>
                 <div className="flex items-center gap-1 shrink-0">
-                  <Button variant="ghost" size="sm" onClick={() => handleDownloadSignReq(doc)} title="Descargar original">
-                    <Download className="w-3.5 h-3.5 text-slate-500" />
-                  </Button>
-                  {doc.status === 'signed' && (
-                    <Button variant="ghost" size="sm" onClick={() => handleDownloadSignedVersion(doc)} title="Descargar firmado" className="text-emerald-600">
-                      <ShieldCheck className="w-3.5 h-3.5" />
+                  {doc.status === 'signed' ? (
+                    <>
+                      <Button variant="outline" size="sm" className="gap-1 text-xs text-emerald-700 border-emerald-300 hover:bg-emerald-50" onClick={() => handleDownloadSignedVersion(doc)} title="Descargar documento firmado">
+                        <ShieldCheck className="w-3.5 h-3.5" /> Descargar firmado
+                      </Button>
+                      <Button variant="ghost" size="sm" onClick={() => handleDownloadSignReq(doc)} title="Descargar original" className="text-slate-400 text-xs">
+                        <Download className="w-3.5 h-3.5" />
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="ghost" size="sm" onClick={() => handleDownloadSignReq(doc)} title="Descargar original">
+                      <Download className="w-3.5 h-3.5 text-slate-500" />
                     </Button>
                   )}
                   <Button variant="ghost" size="sm" onClick={() => handleDeleteSignReq(doc.id)}>
