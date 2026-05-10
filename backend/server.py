@@ -2053,6 +2053,163 @@ async def company_list_tramites(user=Depends(require_company)):
     return tramites
 
 
+# --- Company Sign Documents (Admin uploads, Company signs) ---
+@api_router.post("/companies/{company_id}/sign-requests/upload")
+async def upload_sign_request(
+    company_id: str,
+    file: UploadFile = File(...),
+    user=Depends(require_admin)
+):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="El archivo supera los 5MB")
+
+    ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
+    stored_name = f"company_{company_id}/sign_requests/{uuid.uuid4().hex}.{ext}"
+    content_type = file.content_type or "application/octet-stream"
+    put_object(stored_name, content, content_type)
+
+    doc = {
+        "company_id": company_id,
+        "filename": stored_name,
+        "original_filename": file.filename,
+        "display_name": file.filename,
+        "content_type": content_type,
+        "size": len(content),
+        "status": "pending_signature",
+        "signed_filename": None,
+        "signed_original_filename": None,
+        "signed_at": None,
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "is_deleted": False
+    }
+    result = await db.sign_requests.insert_one(doc)
+
+    await log_audit("sign_request_uploaded", user["_id"], user.get("name", ""),
+                    {"company_id": company_id, "filename": file.filename})
+    return {"id": str(result.inserted_id), "message": "Documento para firmar subido"}
+
+
+@api_router.get("/companies/{company_id}/sign-requests")
+async def list_sign_requests(company_id: str, user=Depends(get_current_user)):
+    if user.get("role") == "company" and user["_id"] != company_id:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    if user.get("role") not in ["admin", "company"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    docs = []
+    async for d in db.sign_requests.find({"company_id": company_id, "is_deleted": False}).sort("uploaded_at", -1):
+        docs.append({
+            "id": str(d["_id"]),
+            "original_filename": d.get("original_filename", ""),
+            "display_name": d.get("display_name", ""),
+            "content_type": d.get("content_type", ""),
+            "size": d.get("size", 0),
+            "status": d.get("status", "pending_signature"),
+            "signed_original_filename": d.get("signed_original_filename", ""),
+            "signed_at": d.get("signed_at", ""),
+            "uploaded_at": d.get("uploaded_at", "")
+        })
+    return docs
+
+
+@api_router.get("/sign-requests/{doc_id}/download")
+async def download_sign_request(doc_id: str, user=Depends(get_current_user)):
+    if user.get("role") not in ["admin", "company"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    doc = await db.sign_requests.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    data, ct = get_object(doc["filename"])
+    return FastAPIResponse(content=data, media_type=ct, headers={
+        "Content-Disposition": f'attachment; filename="{doc.get("original_filename", "document")}"'
+    })
+
+
+@api_router.get("/sign-requests/{doc_id}/download-signed")
+async def download_signed_version(doc_id: str, user=Depends(get_current_user)):
+    if user.get("role") not in ["admin", "company"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    doc = await db.sign_requests.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
+    if not doc or not doc.get("signed_filename"):
+        raise HTTPException(status_code=404, detail="Documento firmado no encontrado")
+
+    data, ct = get_object(doc["signed_filename"])
+    return FastAPIResponse(content=data, media_type=ct, headers={
+        "Content-Disposition": f'attachment; filename="{doc.get("signed_original_filename", "document_firmado")}"'
+    })
+
+
+@api_router.post("/sign-requests/{doc_id}/upload-signed")
+async def upload_signed_document(
+    doc_id: str,
+    file: UploadFile = File(...),
+    user=Depends(get_current_user)
+):
+    if user.get("role") not in ["admin", "company"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+
+    doc = await db.sign_requests.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    content = await file.read()
+    if len(content) > 5 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="El archivo supera los 5MB")
+
+    ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
+    stored_name = f"company_{doc['company_id']}/sign_requests/signed_{uuid.uuid4().hex}.{ext}"
+    content_type = file.content_type or "application/octet-stream"
+    put_object(stored_name, content, content_type)
+
+    await db.sign_requests.update_one(
+        {"_id": ObjectId(doc_id)},
+        {"$set": {
+            "status": "signed",
+            "signed_filename": stored_name,
+            "signed_original_filename": file.filename,
+            "signed_at": datetime.now(timezone.utc).isoformat()
+        }}
+    )
+    return {"message": "Documento firmado subido exitosamente"}
+
+
+@api_router.delete("/sign-requests/{doc_id}")
+async def delete_sign_request(doc_id: str, user=Depends(require_admin)):
+    result = await db.sign_requests.update_one(
+        {"_id": ObjectId(doc_id)}, {"$set": {"is_deleted": True}}
+    )
+    if result.modified_count == 0:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    return {"message": "Documento eliminado"}
+
+
+# --- Company panel: sign request summary ---
+@api_router.get("/company/sign-requests")
+async def company_sign_requests(user=Depends(require_company)):
+    company_id = user["_id"]
+    docs = []
+    async for d in db.sign_requests.find({"company_id": company_id, "is_deleted": False}).sort("uploaded_at", -1):
+        docs.append({
+            "id": str(d["_id"]),
+            "original_filename": d.get("original_filename", ""),
+            "display_name": d.get("display_name", ""),
+            "content_type": d.get("content_type", ""),
+            "status": d.get("status", "pending_signature"),
+            "signed_original_filename": d.get("signed_original_filename", ""),
+            "signed_at": d.get("signed_at", ""),
+            "uploaded_at": d.get("uploaded_at", "")
+        })
+    return docs
+
+
 # --- Admin: Signed Documents from all companies ---
 @api_router.get("/admin/signed-documents")
 async def get_all_signed_documents(user=Depends(require_admin)):

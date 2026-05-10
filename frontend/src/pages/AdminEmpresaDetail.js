@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Building2, Users, Copy, Send, Plus, Trash2, Download,
   FileText, Image as ImageIcon, Clock, ChevronDown, ChevronUp,
-  ClipboardList, Mail, RotateCcw, Upload, Eye, Check, AlertCircle
+  ClipboardList, Mail, RotateCcw, Upload, Eye, Check, AlertCircle, ShieldCheck, PenLine
 } from 'lucide-react';
 
 const CATEGORIES = [
@@ -56,8 +56,11 @@ export default function AdminEmpresaDetail() {
   const [customEmail, setCustomEmail] = useState('');
   const [sendMode, setSendMode] = useState('registro');
   const fileInputRef = useRef(null);
+  const signReqInputRef = useRef(null);
   const [uploadingFor, setUploadingFor] = useState(null);
   const [uploadCategory, setUploadCategory] = useState('otros');
+  const [signRequests, setSignRequests] = useState([]);
+  const [uploadingSignReq, setUploadingSignReq] = useState(false);
 
   const [workerForm, setWorkerForm] = useState({ name: '', last_name: '', nie: '', dni: '', passport_number: '', rut: '', phone: '', email: '', nationality: '' });
   const [tramiteForm, setTramiteForm] = useState({ country: '', tramite_id: '', notes: '' });
@@ -77,6 +80,65 @@ export default function AdminEmpresaDetail() {
   }, []);
 
   useEffect(() => { fetchCompany(); fetchTramites(); }, [fetchCompany, fetchTramites]);
+
+  const fetchSignRequests = useCallback(async () => {
+    try {
+      const res = await api.get(`/companies/${companyId}/sign-requests`);
+      setSignRequests(res.data);
+    } catch {}
+  }, [companyId]);
+
+  useEffect(() => { fetchSignRequests(); }, [fetchSignRequests]);
+
+  const handleUploadSignRequest = async (files) => {
+    if (!files?.length) return;
+    setUploadingSignReq(true);
+    let count = 0;
+    for (const file of files) {
+      if (file.size > 5 * 1024 * 1024) { toast.error(`${file.name} supera 5MB`); continue; }
+      const fd = new FormData();
+      fd.append('file', file);
+      try {
+        await api.post(`/companies/${companyId}/sign-requests/upload`, fd);
+        count++;
+      } catch { toast.error(`Error subiendo ${file.name}`); }
+    }
+    if (count > 0) { toast.success(`${count} documento(s) para firmar subido(s)`); fetchSignRequests(); }
+    setUploadingSignReq(false);
+  };
+
+  const handleDownloadSignReq = async (doc) => {
+    try {
+      const res = await api.get(`/sign-requests/${doc.id}/download`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.original_filename;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { toast.error('Error descargando'); }
+  };
+
+  const handleDownloadSignedVersion = async (doc) => {
+    try {
+      const res = await api.get(`/sign-requests/${doc.id}/download-signed`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.signed_original_filename || 'documento_firmado';
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { toast.error('Error descargando'); }
+  };
+
+  const handleDeleteSignReq = async (docId) => {
+    if (!window.confirm('Eliminar documento para firmar?')) return;
+    try {
+      await api.delete(`/sign-requests/${docId}`);
+      fetchSignRequests();
+      toast.success('Documento eliminado');
+    } catch { toast.error('Error'); }
+  };
 
   const fetchWorkerDocs = async (workerId) => {
     try {
@@ -280,6 +342,68 @@ export default function AdminEmpresaDetail() {
           <p className="text-sm text-slate-700"><strong>Usuario (CIF/NIF):</strong> {company.cif_nif}</p>
           <p className="text-sm text-slate-700"><strong>Contrasena:</strong> {company.password_plain || '****'}</p>
         </div>
+      </div>
+
+      {/* Sign Requests Section */}
+      <div className="bg-white border border-slate-200 rounded-lg p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <PenLine className="w-5 h-5 text-slate-400" />
+            <h2 className="text-base font-semibold text-slate-900">Documentos por firmar</h2>
+            {signRequests.length > 0 && (
+              signRequests.every(d => d.status === 'signed')
+                ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs gap-1"><Check className="w-3 h-3" /> Todos firmados</Badge>
+                : <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs gap-1"><AlertCircle className="w-3 h-3" /> Pendientes de firma</Badge>
+            )}
+          </div>
+          <div>
+            <input ref={signReqInputRef} type="file" multiple accept=".pdf,.doc,.docx,application/pdf" className="hidden"
+              onChange={e => { handleUploadSignRequest(Array.from(e.target.files)); e.target.value = ''; }} />
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => signReqInputRef.current?.click()} disabled={uploadingSignReq} data-testid="upload-sign-request-btn">
+              <Upload className="w-3.5 h-3.5" /> {uploadingSignReq ? 'Subiendo...' : 'Subir documento para firmar'}
+            </Button>
+          </div>
+        </div>
+
+        {signRequests.length === 0 ? (
+          <p className="text-sm text-slate-500 text-center py-6">No hay documentos pendientes de firma</p>
+        ) : (
+          <div className="space-y-2">
+            {signRequests.map(doc => (
+              <div key={doc.id} className={`flex items-center justify-between border rounded-lg p-3 ${doc.status === 'signed' ? 'border-emerald-200 bg-emerald-50/30' : 'border-amber-200 bg-amber-50/30'}`}>
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {doc.status === 'signed' ? <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" /> : <PenLine className="w-4 h-4 text-amber-600 shrink-0" />}
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{doc.display_name || doc.original_filename}</p>
+                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                      <span className="text-xs text-slate-500">{formatDate(doc.uploaded_at)}</span>
+                      {doc.status === 'signed'
+                        ? <Badge className="bg-emerald-100 text-emerald-700 text-[10px] gap-1"><Check className="w-2.5 h-2.5" /> Firmado {doc.signed_at ? formatDate(doc.signed_at) : ''}</Badge>
+                        : <Badge className="bg-amber-100 text-amber-700 text-[10px]">Pendiente de firma</Badge>
+                      }
+                    </div>
+                    {doc.signed_original_filename && (
+                      <p className="text-xs text-emerald-600 mt-0.5">Archivo firmado: {doc.signed_original_filename}</p>
+                    )}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <Button variant="ghost" size="sm" onClick={() => handleDownloadSignReq(doc)} title="Descargar original">
+                    <Download className="w-3.5 h-3.5 text-slate-500" />
+                  </Button>
+                  {doc.status === 'signed' && (
+                    <Button variant="ghost" size="sm" onClick={() => handleDownloadSignedVersion(doc)} title="Descargar firmado" className="text-emerald-600">
+                      <ShieldCheck className="w-3.5 h-3.5" />
+                    </Button>
+                  )}
+                  <Button variant="ghost" size="sm" onClick={() => handleDeleteSignReq(doc.id)}>
+                    <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Tramites Section */}

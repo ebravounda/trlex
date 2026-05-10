@@ -71,9 +71,13 @@ export default function CompanyDashboard() {
   const [showAddWorker, setShowAddWorker] = useState(false);
   const [workerForm, setWorkerForm] = useState({ ...emptyWorker });
   const [saving, setSaving] = useState(false);
+  const [signRequests, setSignRequests] = useState([]);
+  const [uploadingSignedFor, setUploadingSignedFor] = useState(null);
   const fileInputRef = useRef(null);
   const signedInputRef = useRef(null);
+  const signedUploadRef = useRef(null);
   const activeWorkerRef = useRef(null);
+  const activeSignReqRef = useRef(null);
 
   const companyId = user?._id || user?.id;
 
@@ -91,7 +95,14 @@ export default function CompanyDashboard() {
     } catch {}
   }, []);
 
-  useEffect(() => { fetchWorkers(); fetchTramites(); }, [fetchWorkers, fetchTramites]);
+  const fetchSignRequests = useCallback(async () => {
+    try {
+      const res = await api.get('/company/sign-requests');
+      setSignRequests(res.data);
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchWorkers(); fetchTramites(); fetchSignRequests(); }, [fetchWorkers, fetchTramites, fetchSignRequests]);
 
   const fetchWorkerDocs = async (workerId) => {
     try {
@@ -162,6 +173,33 @@ export default function CompanyDashboard() {
     } catch { toast.error('Error descargando'); }
   };
 
+  const handleDownloadSignReq = async (doc) => {
+    try {
+      const res = await api.get(`/sign-requests/${doc.id}/download`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = doc.original_filename;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { toast.error('Error descargando'); }
+  };
+
+  const handleUploadSigned = async (docId, files) => {
+    if (!files?.length) return;
+    setUploadingSignedFor(docId);
+    const file = files[0];
+    if (file.size > 5 * 1024 * 1024) { toast.error('El archivo supera 5MB'); setUploadingSignedFor(null); return; }
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      await api.post(`/sign-requests/${docId}/upload-signed`, fd);
+      toast.success('Documento firmado subido exitosamente');
+      fetchSignRequests();
+    } catch { toast.error('Error subiendo documento firmado'); }
+    setUploadingSignedFor(null);
+  };
+
   const handleLogout = () => { logout(); navigate('/login'); };
 
   const updateWorkerField = (field, value) => setWorkerForm(prev => ({ ...prev, [field]: value }));
@@ -201,6 +239,81 @@ export default function CompanyDashboard() {
                   <Badge className={`text-xs ${STATUS_MAP[t.status]?.color || 'bg-slate-100 text-slate-700'}`}>
                     {STATUS_MAP[t.status]?.label || t.status}
                   </Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Sign Requests - Documents to sign */}
+        {signRequests.length > 0 && (
+          <div className={`border rounded-lg p-5 ${signRequests.some(d => d.status === 'pending_signature') ? 'bg-amber-50 border-amber-200' : 'bg-emerald-50 border-emerald-200'}`} data-testid="sign-requests-section">
+            <div className="flex items-center gap-3 mb-4">
+              <PenLine className={`w-5 h-5 ${signRequests.some(d => d.status === 'pending_signature') ? 'text-amber-600' : 'text-emerald-600'}`} />
+              <h2 className="text-base font-semibold text-slate-900">Documentos por firmar</h2>
+              {signRequests.every(d => d.status === 'signed')
+                ? <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-xs gap-1"><Check className="w-3 h-3" /> Todos firmados</Badge>
+                : <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-xs gap-1 animate-pulse">{signRequests.filter(d => d.status === 'pending_signature').length} pendiente(s)</Badge>
+              }
+            </div>
+            <p className="text-xs text-slate-600 mb-3">Descarga el documento, firmalo con tu certificado electronico, y sube el documento firmado.</p>
+            <div className="space-y-2">
+              {signRequests.map(doc => (
+                <div key={doc.id} className={`flex flex-col sm:flex-row sm:items-center justify-between bg-white border rounded-lg p-4 gap-3 ${doc.status === 'signed' ? 'border-emerald-200' : 'border-amber-300'}`}>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    {doc.status === 'signed'
+                      ? <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                      : <PenLine className="w-5 h-5 text-amber-600 shrink-0" />
+                    }
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{doc.display_name || doc.original_filename}</p>
+                      <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                        <Clock className="w-3 h-3 text-slate-400" />
+                        <span className="text-xs text-slate-500">{formatDate(doc.uploaded_at)}</span>
+                        {doc.status === 'signed'
+                          ? <Badge className="bg-emerald-100 text-emerald-700 text-[10px] gap-1"><Check className="w-2.5 h-2.5" /> Firmado</Badge>
+                          : <Badge className="bg-amber-100 text-amber-700 text-[10px]">Pendiente de firma</Badge>
+                        }
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => handleDownloadSignReq(doc)} data-testid={`download-sign-req-${doc.id}`}>
+                      <Download className="w-3.5 h-3.5" /> Descargar
+                    </Button>
+                    {doc.status === 'pending_signature' && (
+                      <>
+                        <input
+                          ref={el => { if (activeSignReqRef.current === doc.id) signedUploadRef.current = el; }}
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,application/pdf"
+                          className="hidden"
+                          onChange={e => { handleUploadSigned(doc.id, Array.from(e.target.files)); e.target.value = ''; }}
+                        />
+                        <Button
+                          size="sm"
+                          className="gap-1 text-xs bg-emerald-600 hover:bg-emerald-700 text-white"
+                          onClick={() => {
+                            activeSignReqRef.current = doc.id;
+                            setTimeout(() => {
+                              const input = document.createElement('input');
+                              input.type = 'file';
+                              input.accept = '.pdf,.jpg,.jpeg,.png,application/pdf';
+                              input.onchange = (e) => handleUploadSigned(doc.id, Array.from(e.target.files));
+                              input.click();
+                            }, 0);
+                          }}
+                          disabled={uploadingSignedFor === doc.id}
+                          data-testid={`upload-signed-${doc.id}`}
+                        >
+                          <ShieldCheck className="w-3.5 h-3.5" /> {uploadingSignedFor === doc.id ? 'Subiendo...' : 'Subir documento firmado'}
+                        </Button>
+                      </>
+                    )}
+                    {doc.status === 'signed' && (
+                      <Badge className="bg-emerald-100 text-emerald-700 text-xs gap-1"><Check className="w-3 h-3" /> {doc.signed_original_filename}</Badge>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
