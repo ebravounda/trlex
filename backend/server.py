@@ -2279,18 +2279,40 @@ async def chatbot_message(body: ChatMessageInput, user=Depends(get_current_user)
     session_id = body.session_id or f"{role}_{user['_id']}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
 
     try:
-        from emergentintegrations.llm.chat import LlmChat, UserMessage
+        from google import genai
 
-        chat = LlmChat(
-            api_key=EMERGENT_KEY,
-            session_id=session_id,
-            system_message=system_msg
-        ).with_model("gemini", "gemini-2.5-flash")
+        gemini_key = os.environ.get("GEMINI_API_KEY", "")
+        client = genai.Client(api_key=gemini_key)
 
-        user_msg = UserMessage(text=body.message.strip())
-        response = await chat.send_message(user_msg)
+        # Build conversation history from DB
+        history = []
+        chat_history = await db.chat_messages.find(
+            {"session_id": session_id}
+        ).sort("timestamp", 1).to_list(20)
 
-        return {"response": response, "session_id": session_id}
+        for msg in chat_history:
+            history.append({"role": msg["role"], "parts": [{"text": msg["text"]}]})
+
+        response = client.models.generate_content(
+            model="gemini-2.0-flash",
+            contents=[
+                {"role": "user", "parts": [{"text": system_msg}]},
+                {"role": "model", "parts": [{"text": "Entendido, soy el asistente de Tramilex."}]},
+                *history,
+                {"role": "user", "parts": [{"text": body.message.strip()}]}
+            ]
+        )
+
+        bot_response = response.text
+
+        # Save messages to DB
+        now = datetime.now(timezone.utc).isoformat()
+        await db.chat_messages.insert_many([
+            {"session_id": session_id, "role": "user", "text": body.message.strip(), "timestamp": now},
+            {"session_id": session_id, "role": "model", "text": bot_response, "timestamp": now}
+        ])
+
+        return {"response": bot_response, "session_id": session_id}
     except Exception as e:
         error_str = str(e).lower()
         if "rate" in error_str or "limit" in error_str or "quota" in error_str or "429" in error_str:
