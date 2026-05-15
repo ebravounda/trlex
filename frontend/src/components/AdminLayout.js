@@ -4,6 +4,8 @@ import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Buildi
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 
+import ChatBot from '@/components/ChatBot';
+
 const LOGO_URL = "https://tramilex.es/wp-content/uploads/2024/07/logo-tramilex-v3-1.jpg";
 
 const navItems = [
@@ -128,6 +130,7 @@ export default function AdminLayout() {
           <Outlet />
         </main>
       </div>
+      <ChatBot context="admin" />
     </div>
   );
 }

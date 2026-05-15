@@ -2218,6 +2218,87 @@ async def get_all_signed_documents(user=Depends(require_admin)):
     return docs
 
 
+# --- Chatbot (Gemini) ---
+ADMIN_SYSTEM_PROMPT = """Eres el asistente virtual de Tramilex, una plataforma de gestion documental para inmigracion. Respondes SOLO preguntas sobre la plataforma.
+
+FUNCIONES DEL PANEL ADMIN:
+- Clientes: Ver lista de clientes, buscar por nombre/NIE/email, ver detalle con documentos, descargar/renombrar/eliminar documentos, marcar como revisado, generar Ficha PDF, enviar email al cliente, iniciar sesion como cliente.
+- Empresas: Crear empresa (nombre, CIF/NIF, email, telefono), se genera contrasena automatica. Agregar trabajadores, asignar tramites (Chile/Espana), subir documentos para firmar, ver documentos firmados, enviar credenciales por email, historial de correos.
+- Tramites: Gestionar tramites del sistema y crear tramites personalizados con requisitos.
+- Enviar correo: Enviar notificaciones a clientes.
+- Auditoria: Ver historial de acciones realizadas.
+- Configuracion: Configurar SMTP para envio de emails.
+
+Si te preguntan algo que no sea sobre la plataforma, responde: "Solo puedo ayudarte con dudas sobre la plataforma Tramilex."
+Responde siempre en espanol, de forma breve y clara."""
+
+CLIENT_SYSTEM_PROMPT = """Eres el asistente virtual de Tramilex, una plataforma de gestion documental para inmigracion. Respondes SOLO preguntas sobre como usar la plataforma como cliente.
+
+FUNCIONES DEL PANEL CLIENTE:
+- Ver requisitos de tu tramite (en movil, pulsa el boton "Requisitos" para desplegarlos).
+- Subir documentos: Selecciona la categoria (Identificacion, Residencia, Trabajo, Contrato, Fiscal, Otros) y arrastra o haz clic para subir archivos (PDF, JPG, PNG, max 5MB).
+- Si tu archivo supera 5MB, comprimelo en ilovepdf.com.
+- Ver el estado de tus documentos: "Pendiente de revision" o "Revisado".
+- Descargar tus documentos subidos.
+
+Si te preguntan algo que no sea sobre la plataforma, responde: "Solo puedo ayudarte con dudas sobre la plataforma Tramilex."
+Responde siempre en espanol, de forma breve y clara."""
+
+COMPANY_SYSTEM_PROMPT = """Eres el asistente virtual de Tramilex, una plataforma de gestion documental para inmigracion. Respondes SOLO preguntas sobre como usar la plataforma como empresa.
+
+FUNCIONES DEL PANEL EMPRESA:
+- Ver tramites contratados y su estado (pendiente, en proceso, completado, rechazado).
+- Documentos por firmar: Si el abogado te sube documentos, aparecen con alerta amarilla. Descarga el documento, firmalo con tu certificado electronico en tu ordenador, y sube el documento firmado con el boton verde "Subir documento firmado".
+- Trabajadores: Agregar trabajadores con sus datos (nombre, apellidos, DNI/NIE/Pasaporte/RUT, telefono, email, direccion, pais de origen, pais de residencia, nombre padre, nombre madre, hijos).
+- Subir documentos por trabajador: Selecciona categoria y sube archivos. Usa "Subir documento firmado" para documentos con firma electronica.
+- Ver estado de revision de los documentos de cada trabajador.
+
+Si te preguntan algo que no sea sobre la plataforma, responde: "Solo puedo ayudarte con dudas sobre la plataforma Tramilex."
+Responde siempre en espanol, de forma breve y clara."""
+
+
+class ChatMessageInput(BaseModel):
+    message: str
+    session_id: str = ""
+    context: str = "client"
+
+
+@api_router.post("/chatbot/message")
+async def chatbot_message(body: ChatMessageInput, user=Depends(get_current_user)):
+    if not body.message.strip():
+        raise HTTPException(status_code=400, detail="El mensaje no puede estar vacio")
+
+    role = user.get("role", "client")
+    if body.context == "admin" and role == "admin":
+        system_msg = ADMIN_SYSTEM_PROMPT
+    elif body.context == "company" and role == "company":
+        system_msg = COMPANY_SYSTEM_PROMPT
+    else:
+        system_msg = CLIENT_SYSTEM_PROMPT
+
+    session_id = body.session_id or f"{role}_{user['_id']}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
+
+    try:
+        from emergentintegrations.llm.chat import LlmChat, UserMessage
+
+        chat = LlmChat(
+            api_key=EMERGENT_KEY,
+            session_id=session_id,
+            system_message=system_msg
+        ).with_model("gemini", "gemini-2.5-flash")
+
+        user_msg = UserMessage(text=body.message.strip())
+        response = await chat.send_message(user_msg)
+
+        return {"response": response, "session_id": session_id}
+    except Exception as e:
+        error_str = str(e).lower()
+        if "rate" in error_str or "limit" in error_str or "quota" in error_str or "429" in error_str:
+            return {"response": "Exceso de Limite. Por favor intenta de nuevo mas tarde.", "session_id": session_id}
+        logger.error(f"Chatbot error: {e}")
+        return {"response": "Error procesando tu consulta. Intenta de nuevo.", "session_id": session_id}
+
+
 # --- Startup ---
 @app.on_event("startup")
 async def startup():

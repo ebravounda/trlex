@@ -15,6 +15,8 @@ import {
   Trash2, PenLine, ShieldCheck
 } from 'lucide-react';
 
+import ChatBot from '@/components/ChatBot';
+
 const LOGO_URL = "https://tramilex.es/wp-content/uploads/2024/07/logo-tramilex-v3-1.jpg";
 
 const CATEGORIES = [
@@ -534,6 +536,7 @@ export default function CompanyDashboard() {
           Creado por <a href="https://goroky.com" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-slate-700 font-medium">GoRoky.com</a>
         </p>
       </footer>
+      <ChatBot context="company" />
     </div>
   );
 }

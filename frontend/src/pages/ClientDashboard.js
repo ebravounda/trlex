@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
+import ChatBot from '@/components/ChatBot';
 import { Upload, Download, LogOut, FileText, Image as ImageIcon, Clock, Tag, ClipboardList, ChevronDown } from 'lucide-react';
 
 const LOGO_URL = "https://tramilex.es/wp-content/uploads/2024/07/logo-tramilex-v3-1.jpg";
@@ -440,6 +441,7 @@ export default function ClientDashboard() {
           Creado por <a href="https://goroky.com" target="_blank" rel="noopener noreferrer" className="text-slate-500 hover:text-slate-700 font-medium">GoRoky.com</a>
         </p>
       </footer>
+      <ChatBot context="client" />
     </div>
   );
 }
