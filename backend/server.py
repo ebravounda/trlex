@@ -2279,37 +2279,34 @@ async def chatbot_message(body: ChatMessageInput, user=Depends(get_current_user)
     session_id = body.session_id or f"{role}_{user['_id']}_{datetime.now(timezone.utc).strftime('%Y%m%d')}"
 
     try:
-        from google import genai
+        from groq import Groq
 
-        gemini_key = os.environ.get("GEMINI_API_KEY", "")
-        client = genai.Client(api_key=gemini_key)
+        groq_key = os.environ.get("GROQ_API_KEY", "")
+        groq_client = Groq(api_key=groq_key)
 
         # Build conversation history from DB
-        history = []
+        messages = [{"role": "system", "content": system_msg}]
         chat_history = await db.chat_messages.find(
             {"session_id": session_id}
         ).sort("timestamp", 1).to_list(20)
 
         for msg in chat_history:
-            history.append({"role": msg["role"], "parts": [{"text": msg["text"]}]})
+            messages.append({"role": msg["role"], "content": msg["text"]})
 
-        response = client.models.generate_content(
-            model="gemini-2.0-flash",
-            contents=[
-                {"role": "user", "parts": [{"text": system_msg}]},
-                {"role": "model", "parts": [{"text": "Entendido, soy el asistente de Tramilex."}]},
-                *history,
-                {"role": "user", "parts": [{"text": body.message.strip()}]}
-            ]
+        messages.append({"role": "user", "content": body.message.strip()})
+
+        response = groq_client.chat.completions.create(
+            messages=messages,
+            model="llama-3.3-70b-versatile"
         )
 
-        bot_response = response.text
+        bot_response = response.choices[0].message.content
 
         # Save messages to DB
         now = datetime.now(timezone.utc).isoformat()
         await db.chat_messages.insert_many([
             {"session_id": session_id, "role": "user", "text": body.message.strip(), "timestamp": now},
-            {"session_id": session_id, "role": "model", "text": bot_response, "timestamp": now}
+            {"session_id": session_id, "role": "assistant", "text": bot_response, "timestamp": now}
         ])
 
         return {"response": bot_response, "session_id": session_id}
