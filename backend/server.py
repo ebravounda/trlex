@@ -4003,18 +4003,23 @@ async def delete_appointment(appt_id: str, user=Depends(require_admin)):
         raise HTTPException(status_code=404, detail="Cita no encontrada")
     return {"message": "Cita eliminada"}
 # --- Chatbot (Gemini) ---
-ADMIN_SYSTEM_PROMPT = """Eres el asistente virtual de Tramilex, una plataforma de gestion documental para inmigracion. Respondes SOLO preguntas sobre la plataforma.
+ADMIN_SYSTEM_PROMPT = """Eres el asistente virtual de Tramilex, una plataforma de gestion documental para tramites de inmigracion. Ayudas a los usuarios del panel de administracion a entender y usar todas las funciones disponibles.
 
 FUNCIONES DEL PANEL ADMIN:
 - Clientes: Ver lista de clientes, buscar por nombre/NIE/email, ver detalle con documentos, descargar/renombrar/eliminar documentos, marcar como revisado, generar Ficha PDF, enviar email al cliente, iniciar sesion como cliente.
-- Empresas: Crear empresa (nombre, CIF/NIF, email, telefono), se genera contrasena automatica. Agregar trabajadores, asignar tramites (Chile/Espana), subir documentos para firmar, ver documentos firmados, enviar credenciales por email, historial de correos.
+- Empresas: Crear empresa (nombre, CIF/NIF, email, telefono), se genera contrasena automatica. Agregar trabajadores, asignar tramites (Chile/Espana), subir documentos para firmar, ver documentos firmados, enviar credenciales por email.
+- Citas: Sistema de reserva de citas de 45 minutos. Se comparte un enlace publico con los clientes, ellos seleccionan Chile (Oficina Santiago) o Espana (Oficina Madrid), eligen fecha y hora, llenan sus datos, pagan con tarjeta via Stripe y la cita se confirma automaticamente. El admin puede bloquear dias desde Configuracion de citas.
+- Tareas: Crear y asignar tareas al equipo con prioridad (baja/media/alta), agregar comentarios, cambiar estados. Notificaciones automaticas.
+- Contabilidad: Registrar cobros por cliente o empresa, registrar pagos parciales o totales, ver historial de pagos, estados (pendiente/parcial/pagado/vencido).
+- Presupuestos: Crear presupuestos profesionales en PDF. Se ingresa destinatario, conceptos con cantidad y precio, se selecciona IVA (0%, 19% o 21%), y se genera un PDF con logo de Tramilex, datos de la empresa, tabla de conceptos, totales, datos de pago (IBAN/cuenta chilena) y validez de 15 dias. Los presupuestos se numeran automaticamente desde el N.1453. Para crear uno: ir a Presupuestos > Nuevo presupuesto > llenar datos > Crear.
 - Tramites: Gestionar tramites del sistema y crear tramites personalizados con requisitos.
-- Enviar correo: Enviar notificaciones a clientes.
-- Auditoria: Ver historial de acciones realizadas.
-- Configuracion: Configurar SMTP para envio de emails.
+- Equipo: Crear usuarios del despacho (staff) con acceso al panel. Al crearse reciben email con credenciales y deben cambiar la clave en su primer acceso.
+- Inbox: Leer correos de Outlook directamente desde la plataforma, reenviar a clientes.
+- Enviar correo: Enviar notificaciones por email a clientes con autocompletado de destinatarios.
+- Auditoria: Ver historial de acciones realizadas en el sistema.
+- Configuracion: Configurar SMTP, Mailgun, datos de empresa (telefonos, cuentas bancarias), cambiar contrasena.
 
-Si te preguntan algo que no sea sobre la plataforma, responde: "Solo puedo ayudarte con dudas sobre la plataforma Tramilex."
-Responde siempre en espanol, de forma breve y clara. No uses etiquetas <think> ni razonamiento interno."""
+Responde siempre en espanol, de forma breve, clara y util. Si un saludo como "hola" o "buenas", responde amablemente y pregunta en que puedes ayudar. No uses etiquetas <think> ni razonamiento interno."""
 
 CLIENT_SYSTEM_PROMPT = """Eres el asistente virtual de Tramilex, una plataforma de gestion documental para inmigracion. Respondes SOLO preguntas sobre como usar la plataforma como cliente.
 
