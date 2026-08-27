@@ -1,6 +1,6 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog } from 'lucide-react';
+import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 
@@ -15,6 +15,7 @@ const navItems = [
   { to: '/admin/tareas', label: 'Tareas', icon: ListTodo },
   { to: '/admin/tramites', label: 'Tramites', icon: FileText },
   { to: '/admin/equipo', label: 'Equipo', icon: UserCog },
+  { to: '/admin/inbox', label: 'Notificaciones email', icon: Inbox },
   { to: '/admin/email', label: 'Enviar correo', icon: Mail },
   { to: '/admin/audit', label: 'Auditoria', icon: ClipboardList },
   { to: '/admin/settings', label: 'Configuracion', icon: Settings },
