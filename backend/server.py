@@ -2642,125 +2642,73 @@ async def mark_all_notifications_read(user=Depends(require_staff_or_admin)):
 
 
 # ============================
-# --- Email Inbox (IMAP) ---
+# --- Email Inbox (Microsoft Graph) ---
 # ============================
 
-def fetch_imap_emails(limit=30):
-    import imaplib
-    import email as email_lib
-    from email.header import decode_header
+def get_ms_graph_token():
+    import msal
+    client_id = os.environ.get("MS_CLIENT_ID", "")
+    tenant_id = os.environ.get("MS_TENANT_ID", "")
+    client_secret = os.environ.get("MS_CLIENT_SECRET", "")
+    if not client_id or not tenant_id or not client_secret:
+        return None
+    app = msal.ConfidentialClientApplication(
+        client_id,
+        authority=f"https://login.microsoftonline.com/{tenant_id}",
+        client_credential=client_secret
+    )
+    result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+    return result.get("access_token")
 
-    host = os.environ.get("IMAP_HOST", "")
-    port = int(os.environ.get("IMAP_PORT", "993"))
-    imap_email = os.environ.get("IMAP_EMAIL", "")
-    imap_password = os.environ.get("IMAP_PASSWORD", "")
 
-    if not host or not imap_email:
+def fetch_outlook_emails(limit=30):
+    import requests as req
+    token = get_ms_graph_token()
+    if not token:
         return []
-
+    ms_email = os.environ.get("MS_EMAIL", "")
+    headers = {"Authorization": f"Bearer {token}"}
     try:
-        mail = imaplib.IMAP4_SSL(host, port)
-        mail.login(imap_email, imap_password)
-        mail.select("INBOX")
-
-        status, data = mail.search(None, "ALL")
-        if status != "OK":
-            mail.logout()
+        url = f"https://graph.microsoft.com/v1.0/users/{ms_email}/messages?$top={limit}&$select=id,subject,from,receivedDateTime,hasAttachments,bodyPreview,body&$orderby=receivedDateTime desc"
+        r = req.get(url, headers=headers)
+        if r.status_code != 200:
+            logger.error(f"Graph API error: {r.status_code} {r.text[:200]}")
             return []
-
-        msg_ids = data[0].split()
-        msg_ids = msg_ids[-limit:]
-        msg_ids.reverse()
-
+        data = r.json()
         emails = []
-        for mid in msg_ids:
-            status, msg_data = mail.fetch(mid, "(RFC822)")
-            if status != "OK":
-                continue
+        for m in data.get("value", []):
+            from_info = m.get("from", {}).get("emailAddress", {})
+            from_str = f"{from_info.get('name', '')} <{from_info.get('address', '')}>"
+            body_content = m.get("body", {}).get("content", "")
+            if len(body_content) > 3000:
+                body_content = body_content[:3000] + "..."
 
-            raw = msg_data[0][1]
-            msg = email_lib.message_from_bytes(raw)
-
-            # Decode subject
-            subject = ""
-            raw_subject = msg.get("Subject", "")
-            if raw_subject:
-                decoded = decode_header(raw_subject)
-                parts = []
-                for part, enc in decoded:
-                    if isinstance(part, bytes):
-                        parts.append(part.decode(enc or "utf-8", errors="replace"))
-                    else:
-                        parts.append(str(part))
-                subject = " ".join(parts)
-
-            # Decode from
-            from_addr = ""
-            raw_from = msg.get("From", "")
-            if raw_from:
-                decoded = decode_header(raw_from)
-                parts = []
-                for part, enc in decoded:
-                    if isinstance(part, bytes):
-                        parts.append(part.decode(enc or "utf-8", errors="replace"))
-                    else:
-                        parts.append(str(part))
-                from_addr = " ".join(parts)
-
-            date_str = msg.get("Date", "")
-
-            # Get body
-            body_text = ""
             attachments = []
-            if msg.is_multipart():
-                for part in msg.walk():
-                    ct = part.get_content_type()
-                    cd = str(part.get("Content-Disposition", ""))
-                    if "attachment" in cd:
-                        fname = part.get_filename()
-                        if fname:
-                            decoded_name = decode_header(fname)
-                            name_parts = []
-                            for p, e in decoded_name:
-                                if isinstance(p, bytes):
-                                    name_parts.append(p.decode(e or "utf-8", errors="replace"))
-                                else:
-                                    name_parts.append(str(p))
-                            attachments.append({"filename": " ".join(name_parts), "content_type": ct})
-                    elif ct == "text/plain" and not body_text:
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            charset = part.get_content_charset() or "utf-8"
-                            body_text = payload.decode(charset, errors="replace")
-                    elif ct == "text/html" and not body_text:
-                        payload = part.get_payload(decode=True)
-                        if payload:
-                            charset = part.get_content_charset() or "utf-8"
-                            body_text = payload.decode(charset, errors="replace")
-            else:
-                payload = msg.get_payload(decode=True)
-                if payload:
-                    charset = msg.get_content_charset() or "utf-8"
-                    body_text = payload.decode(charset, errors="replace")
-
-            # Truncate body
-            if len(body_text) > 2000:
-                body_text = body_text[:2000] + "..."
+            if m.get("hasAttachments"):
+                att_url = f"https://graph.microsoft.com/v1.0/users/{ms_email}/messages/{m['id']}/attachments?$select=id,name,contentType,size"
+                att_r = req.get(att_url, headers=headers)
+                if att_r.status_code == 200:
+                    for a in att_r.json().get("value", []):
+                        attachments.append({
+                            "id": a.get("id", ""),
+                            "filename": a.get("name", ""),
+                            "content_type": a.get("contentType", ""),
+                            "size": a.get("size", 0)
+                        })
 
             emails.append({
-                "id": mid.decode() if isinstance(mid, bytes) else str(mid),
-                "subject": subject,
-                "from": from_addr,
-                "date": date_str,
-                "body": body_text,
+                "id": m.get("id", ""),
+                "subject": m.get("subject", "(Sin asunto)"),
+                "from": from_str,
+                "date": m.get("receivedDateTime", ""),
+                "body": body_content,
+                "body_type": m.get("body", {}).get("contentType", "text"),
                 "attachments": attachments,
-                "has_attachments": len(attachments) > 0
+                "has_attachments": m.get("hasAttachments", False)
             })
-
-        mail.logout()
         return emails
     except Exception as e:
-        logger.error(f"IMAP error: {e}")
+        logger.error(f"Graph API fetch error: {e}")
         return []
 
 
@@ -2768,54 +2716,30 @@ def fetch_imap_emails(limit=30):
 async def get_inbox(user=Depends(require_staff_or_admin)):
     import asyncio
     loop = asyncio.get_event_loop()
-    emails = await loop.run_in_executor(None, fetch_imap_emails)
+    emails = await loop.run_in_executor(None, fetch_outlook_emails)
     return emails
 
 
-@api_router.get("/inbox/attachment/{msg_id}/{attachment_idx}")
-async def download_inbox_attachment(msg_id: str, attachment_idx: int, user=Depends(require_staff_or_admin)):
-    import imaplib
-    import email as email_lib
-    from email.header import decode_header
-
-    host = os.environ.get("IMAP_HOST", "")
-    port = int(os.environ.get("IMAP_PORT", "993"))
-    imap_email = os.environ.get("IMAP_EMAIL", "")
-    imap_password = os.environ.get("IMAP_PASSWORD", "")
-
-    try:
-        mail = imaplib.IMAP4_SSL(host, port)
-        mail.login(imap_email, imap_password)
-        mail.select("INBOX")
-
-        status, msg_data = mail.fetch(msg_id.encode(), "(RFC822)")
-        if status != "OK":
-            mail.logout()
-            raise HTTPException(status_code=404, detail="Email no encontrado")
-
-        raw = msg_data[0][1]
-        msg = email_lib.message_from_bytes(raw)
-
-        idx = 0
-        for part in msg.walk():
-            cd = str(part.get("Content-Disposition", ""))
-            if "attachment" in cd:
-                if idx == attachment_idx:
-                    payload = part.get_payload(decode=True)
-                    fname = part.get_filename() or "attachment"
-                    ct = part.get_content_type() or "application/octet-stream"
-                    mail.logout()
-                    return FastAPIResponse(content=payload, media_type=ct, headers={
-                        "Content-Disposition": f'attachment; filename="{fname}"'
-                    })
-                idx += 1
-
-        mail.logout()
+@api_router.get("/inbox/attachment/{msg_id}/{attachment_id}")
+async def download_inbox_attachment(msg_id: str, attachment_id: str, user=Depends(require_staff_or_admin)):
+    import requests as req
+    token = get_ms_graph_token()
+    if not token:
+        raise HTTPException(status_code=500, detail="No se pudo conectar a Outlook")
+    ms_email = os.environ.get("MS_EMAIL", "")
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"https://graph.microsoft.com/v1.0/users/{ms_email}/messages/{msg_id}/attachments/{attachment_id}"
+    r = req.get(url, headers=headers)
+    if r.status_code != 200:
         raise HTTPException(status_code=404, detail="Adjunto no encontrado")
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
+    att = r.json()
+    import base64
+    content = base64.b64decode(att.get("contentBytes", ""))
+    filename = att.get("name", "attachment")
+    ct = att.get("contentType", "application/octet-stream")
+    return FastAPIResponse(content=content, media_type=ct, headers={
+        "Content-Disposition": f'attachment; filename="{filename}"'
+    })
 
 
 # --- Chatbot (Gemini) ---

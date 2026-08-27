@@ -1,8 +1,9 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
+import api from '@/lib/api';
 import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog, Inbox } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 import ChatBot from '@/components/ChatBot';
 import NotificationBell from '@/components/NotificationBell';
@@ -21,7 +22,7 @@ const navItems = [
   { to: '/admin/settings', label: 'Configuracion', icon: Settings },
 ];
 
-function SidebarContent({ onClose }) {
+function SidebarContent({ onClose, inboxUnread }) {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
@@ -60,6 +61,9 @@ function SidebarContent({ onClose }) {
           >
             <Icon className="w-4 h-4" strokeWidth={1.5} />
             {label}
+            {to === '/admin/inbox' && inboxUnread > 0 && (
+              <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{inboxUnread > 9 ? '9+' : inboxUnread}</span>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -84,13 +88,29 @@ function SidebarContent({ onClose }) {
 
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [inboxUnread, setInboxUnread] = useState(0);
   const { user } = useAuth();
+
+  const checkInbox = useCallback(async () => {
+    try {
+      const res = await api.get('/inbox');
+      const readIds = JSON.parse(localStorage.getItem('tramilex_read_emails') || '[]');
+      const unread = res.data.filter(e => !readIds.includes(e.id)).length;
+      setInboxUnread(unread);
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    checkInbox();
+    const interval = setInterval(checkInbox, 60000);
+    return () => clearInterval(interval);
+  }, [checkInbox]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex" data-testid="admin-layout">
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 flex-col fixed inset-y-0 left-0 z-30">
-        <SidebarContent />
+        <SidebarContent inboxUnread={inboxUnread} />
       </aside>
 
       {/* Mobile overlay */}
@@ -98,7 +118,7 @@ export default function AdminLayout() {
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl z-50">
-            <SidebarContent onClose={() => setSidebarOpen(false)} />
+            <SidebarContent onClose={() => setSidebarOpen(false)} inboxUnread={inboxUnread} />
           </aside>
         </div>
       )}
