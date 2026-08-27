@@ -14,6 +14,7 @@ import AdminEmpresas from '@/pages/AdminEmpresas';
 import AdminEmpresaDetail from '@/pages/AdminEmpresaDetail';
 import AdminTareas from '@/pages/AdminTareas';
 import AdminStaff from '@/pages/AdminStaff';
+import AdminInbox from '@/pages/AdminInbox';
 import CompanyDashboard from '@/pages/CompanyDashboard';
 import AdminLayout from '@/components/AdminLayout';
 import { Toaster } from 'sonner';
@@ -70,6 +71,7 @@ function AppRoutes() {
         <Route path="empresas/:companyId" element={<AdminEmpresaDetail />} />
         <Route path="tareas" element={<AdminTareas />} />
         <Route path="equipo" element={<AdminStaff />} />
+        <Route path="inbox" element={<AdminInbox />} />
         <Route path="tramites" element={<AdminTramites />} />
         <Route path="email" element={<AdminEmail />} />
         <Route path="audit" element={<AdminAudit />} />

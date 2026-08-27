@@ -75,6 +75,7 @@ export default function CompanyDashboard() {
   const [saving, setSaving] = useState(false);
   const [signRequests, setSignRequests] = useState([]);
   const [uploadingSignedFor, setUploadingSignedFor] = useState(null);
+  const [tramiteRequirements, setTramiteRequirements] = useState([]);
   const fileInputRef = useRef(null);
   const signedInputRef = useRef(null);
   const signedUploadRef = useRef(null);
@@ -104,7 +105,14 @@ export default function CompanyDashboard() {
     } catch {}
   }, []);
 
-  useEffect(() => { fetchWorkers(); fetchTramites(); fetchSignRequests(); }, [fetchWorkers, fetchTramites, fetchSignRequests]);
+  const fetchTramiteRequirements = useCallback(async () => {
+    try {
+      const res = await api.get('/company/tramite-requirements');
+      setTramiteRequirements(res.data);
+    } catch {}
+  }, []);
+
+  useEffect(() => { fetchWorkers(); fetchTramites(); fetchSignRequests(); fetchTramiteRequirements(); }, [fetchWorkers, fetchTramites, fetchSignRequests, fetchTramiteRequirements]);
 
   const fetchWorkerDocs = async (workerId) => {
     try {
@@ -241,6 +249,60 @@ export default function CompanyDashboard() {
                   <Badge className={`text-xs ${STATUS_MAP[t.status]?.color || 'bg-slate-100 text-slate-700'}`}>
                     {STATUS_MAP[t.status]?.label || t.status}
                   </Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Tramite Requirements */}
+        {tramiteRequirements.length > 0 && (
+          <div className="bg-white border border-slate-200 rounded-lg p-5">
+            <div className="flex items-center gap-3 mb-4">
+              <ClipboardList className="w-5 h-5 text-sky-500" />
+              <h2 className="text-base font-semibold text-slate-900">Documentos requeridos por tramite</h2>
+            </div>
+            <p className="text-xs text-slate-500 mb-4">Estos son los documentos que debes subir para cada tramite contratado.</p>
+            <div className="space-y-4">
+              {tramiteRequirements.map((tr, i) => (
+                <div key={i} className="border border-slate-200 rounded-lg p-4">
+                  <p className="text-sm font-semibold text-slate-800 mb-2">{tr.tramite_name}</p>
+                  {tr.requirements?.length > 0 && (
+                    <div className="mb-2">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Requisitos</p>
+                      <ul className="space-y-1">
+                        {tr.requirements.map((r, j) => (
+                          <li key={j} className="text-sm text-slate-600 flex items-start gap-2">
+                            <span className="text-emerald-500 mt-0.5 font-bold">-</span> {r}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {tr.docs_persona?.length > 0 && (
+                    <div className="mb-2">
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Documentos personales</p>
+                      <ul className="space-y-1">
+                        {tr.docs_persona.map((d, j) => (
+                          <li key={j} className="text-sm text-slate-600 flex items-start gap-2">
+                            <span className="text-sky-500 mt-0.5 font-bold">-</span> {d}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                  {tr.docs_empresa?.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-1">Documentos empresa</p>
+                      <ul className="space-y-1">
+                        {tr.docs_empresa.map((d, j) => (
+                          <li key={j} className="text-sm text-slate-600 flex items-start gap-2">
+                            <span className="text-sky-500 mt-0.5 font-bold">-</span> {d}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

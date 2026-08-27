@@ -2221,6 +2221,27 @@ async def delete_sign_request(doc_id: str, user=Depends(require_admin)):
     return {"message": "Documento eliminado"}
 
 
+# --- Company panel: tramite requirements ---
+@api_router.get("/company/tramite-requirements")
+async def company_tramite_requirements(user=Depends(require_company)):
+    company_id = user["_id"]
+    result = []
+    async for t in db.company_tramites.find({"company_id": company_id}).sort("created_at", -1):
+        tramite_info = get_tramite_docs(t.get("country", ""), t.get("tramite_id", ""))
+        if tramite_info:
+            result.append({
+                "tramite_id": t.get("tramite_id", ""),
+                "tramite_name": tramite_info.get("name", t.get("tramite_id", "")),
+                "country": t.get("country", ""),
+                "status": t.get("status", "pendiente"),
+                "requirements": tramite_info.get("requirements", []),
+                "docs_persona": tramite_info.get("docs_persona", []),
+                "docs_empresa": tramite_info.get("docs_empresa", []),
+                "required_docs": tramite_info.get("required_docs", [])
+            })
+    return result
+
+
 # --- Company panel: sign request summary ---
 @api_router.get("/company/sign-requests")
 async def company_sign_requests(user=Depends(require_company)):
@@ -2261,6 +2282,50 @@ async def get_all_signed_documents(user=Depends(require_admin)):
             "company_id": d.get("company_id", "")
         })
     return docs
+
+
+# --- Task email notification ---
+def send_task_email(to_email, to_name, task_title, from_name, priority, description):
+    try:
+        import pymongo
+        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
+        sync_db = sync_client[os.environ['DB_NAME']]
+        settings = sync_db.settings.find_one({"type": "smtp"})
+        sync_client.close()
+
+        if not settings or not settings.get("smtp_host"):
+            return
+
+        priority_colors = {"alta": "#ef4444", "media": "#f59e0b", "baja": "#94a3b8"}
+        color = priority_colors.get(priority, "#94a3b8")
+
+        msg = MIMEMultipart()
+        msg["From"] = settings["from_email"]
+        msg["To"] = to_email
+        msg["Subject"] = f"Tramilex - Nueva tarea asignada: {task_title}"
+
+        body = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0f172a;">Te han asignado una tarea</h2>
+            <p>Hola {to_name},</p>
+            <p><strong>{from_name}</strong> te ha asignado una nueva tarea:</p>
+            <div style="background: #f8fafc; border-left: 4px solid {color}; padding: 16px; margin: 16px 0; border-radius: 4px;">
+                <p style="margin: 0 0 8px 0; font-size: 18px; font-weight: bold;">{task_title}</p>
+                <p style="margin: 0 0 4px 0;">Prioridad: <span style="color: {color}; font-weight: bold;">{priority.upper()}</span></p>
+                {f'<p style="margin: 8px 0 0 0; color: #64748b;">{description}</p>' if description else ''}
+            </div>
+            <p>Accede a la plataforma para ver los detalles: <a href="https://tramilex.goroky.es/admin/tareas">Ver tareas</a></p>
+        </div>
+        """
+        msg.attach(MIMEText(body, "html"))
+
+        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
+        server.starttls()
+        server.login(settings["smtp_user"], settings["smtp_password"])
+        server.send_message(msg)
+        server.quit()
+    except Exception as e:
+        logger.error(f"Error enviando email de tarea: {e}")
 
 
 # ============================
@@ -2335,7 +2400,7 @@ async def delete_staff(staff_id: str, user=Depends(require_admin)):
 # ============================
 
 @api_router.post("/tasks")
-async def create_task(body: TaskCreateInput, user=Depends(require_staff_or_admin)):
+async def create_task(body: TaskCreateInput, background_tasks: BackgroundTasks, user=Depends(require_staff_or_admin)):
     if not body.title.strip():
         raise HTTPException(status_code=400, detail="El titulo es obligatorio")
     if body.priority not in ["baja", "media", "alta"]:
@@ -2378,6 +2443,14 @@ async def create_task(body: TaskCreateInput, user=Depends(require_staff_or_admin
         "read": False,
         "created_at": datetime.now(timezone.utc).isoformat()
     })
+
+    # Send email notification
+    assigned_email = assigned.get("email", "")
+    if assigned_email:
+        background_tasks.add_task(
+            send_task_email, assigned_email, assigned.get("name", ""),
+            body.title.strip(), user.get("name", ""), body.priority, body.description
+        )
 
     await log_audit("task_created", user["_id"], user.get("name", ""),
                     {"task_id": task_id, "title": body.title, "assigned_to": assigned.get("name", "")})
@@ -2566,6 +2639,183 @@ async def mark_all_notifications_read(user=Depends(require_staff_or_admin)):
         {"$set": {"read": True}}
     )
     return {"message": "Todas las notificaciones marcadas como leidas"}
+
+
+# ============================
+# --- Email Inbox (IMAP) ---
+# ============================
+
+def fetch_imap_emails(limit=30):
+    import imaplib
+    import email as email_lib
+    from email.header import decode_header
+
+    host = os.environ.get("IMAP_HOST", "")
+    port = int(os.environ.get("IMAP_PORT", "993"))
+    imap_email = os.environ.get("IMAP_EMAIL", "")
+    imap_password = os.environ.get("IMAP_PASSWORD", "")
+
+    if not host or not imap_email:
+        return []
+
+    try:
+        mail = imaplib.IMAP4_SSL(host, port)
+        mail.login(imap_email, imap_password)
+        mail.select("INBOX")
+
+        status, data = mail.search(None, "ALL")
+        if status != "OK":
+            mail.logout()
+            return []
+
+        msg_ids = data[0].split()
+        msg_ids = msg_ids[-limit:]
+        msg_ids.reverse()
+
+        emails = []
+        for mid in msg_ids:
+            status, msg_data = mail.fetch(mid, "(RFC822)")
+            if status != "OK":
+                continue
+
+            raw = msg_data[0][1]
+            msg = email_lib.message_from_bytes(raw)
+
+            # Decode subject
+            subject = ""
+            raw_subject = msg.get("Subject", "")
+            if raw_subject:
+                decoded = decode_header(raw_subject)
+                parts = []
+                for part, enc in decoded:
+                    if isinstance(part, bytes):
+                        parts.append(part.decode(enc or "utf-8", errors="replace"))
+                    else:
+                        parts.append(str(part))
+                subject = " ".join(parts)
+
+            # Decode from
+            from_addr = ""
+            raw_from = msg.get("From", "")
+            if raw_from:
+                decoded = decode_header(raw_from)
+                parts = []
+                for part, enc in decoded:
+                    if isinstance(part, bytes):
+                        parts.append(part.decode(enc or "utf-8", errors="replace"))
+                    else:
+                        parts.append(str(part))
+                from_addr = " ".join(parts)
+
+            date_str = msg.get("Date", "")
+
+            # Get body
+            body_text = ""
+            attachments = []
+            if msg.is_multipart():
+                for part in msg.walk():
+                    ct = part.get_content_type()
+                    cd = str(part.get("Content-Disposition", ""))
+                    if "attachment" in cd:
+                        fname = part.get_filename()
+                        if fname:
+                            decoded_name = decode_header(fname)
+                            name_parts = []
+                            for p, e in decoded_name:
+                                if isinstance(p, bytes):
+                                    name_parts.append(p.decode(e or "utf-8", errors="replace"))
+                                else:
+                                    name_parts.append(str(p))
+                            attachments.append({"filename": " ".join(name_parts), "content_type": ct})
+                    elif ct == "text/plain" and not body_text:
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            charset = part.get_content_charset() or "utf-8"
+                            body_text = payload.decode(charset, errors="replace")
+                    elif ct == "text/html" and not body_text:
+                        payload = part.get_payload(decode=True)
+                        if payload:
+                            charset = part.get_content_charset() or "utf-8"
+                            body_text = payload.decode(charset, errors="replace")
+            else:
+                payload = msg.get_payload(decode=True)
+                if payload:
+                    charset = msg.get_content_charset() or "utf-8"
+                    body_text = payload.decode(charset, errors="replace")
+
+            # Truncate body
+            if len(body_text) > 2000:
+                body_text = body_text[:2000] + "..."
+
+            emails.append({
+                "id": mid.decode() if isinstance(mid, bytes) else str(mid),
+                "subject": subject,
+                "from": from_addr,
+                "date": date_str,
+                "body": body_text,
+                "attachments": attachments,
+                "has_attachments": len(attachments) > 0
+            })
+
+        mail.logout()
+        return emails
+    except Exception as e:
+        logger.error(f"IMAP error: {e}")
+        return []
+
+
+@api_router.get("/inbox")
+async def get_inbox(user=Depends(require_staff_or_admin)):
+    import asyncio
+    loop = asyncio.get_event_loop()
+    emails = await loop.run_in_executor(None, fetch_imap_emails)
+    return emails
+
+
+@api_router.get("/inbox/attachment/{msg_id}/{attachment_idx}")
+async def download_inbox_attachment(msg_id: str, attachment_idx: int, user=Depends(require_staff_or_admin)):
+    import imaplib
+    import email as email_lib
+    from email.header import decode_header
+
+    host = os.environ.get("IMAP_HOST", "")
+    port = int(os.environ.get("IMAP_PORT", "993"))
+    imap_email = os.environ.get("IMAP_EMAIL", "")
+    imap_password = os.environ.get("IMAP_PASSWORD", "")
+
+    try:
+        mail = imaplib.IMAP4_SSL(host, port)
+        mail.login(imap_email, imap_password)
+        mail.select("INBOX")
+
+        status, msg_data = mail.fetch(msg_id.encode(), "(RFC822)")
+        if status != "OK":
+            mail.logout()
+            raise HTTPException(status_code=404, detail="Email no encontrado")
+
+        raw = msg_data[0][1]
+        msg = email_lib.message_from_bytes(raw)
+
+        idx = 0
+        for part in msg.walk():
+            cd = str(part.get("Content-Disposition", ""))
+            if "attachment" in cd:
+                if idx == attachment_idx:
+                    payload = part.get_payload(decode=True)
+                    fname = part.get_filename() or "attachment"
+                    ct = part.get_content_type() or "application/octet-stream"
+                    mail.logout()
+                    return FastAPIResponse(content=payload, media_type=ct, headers={
+                        "Content-Disposition": f'attachment; filename="{fname}"'
+                    })
+                idx += 1
+
+        mail.logout()
+        raise HTTPException(status_code=404, detail="Adjunto no encontrado")
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error: {str(e)}")
 
 
 # --- Chatbot (Gemini) ---
