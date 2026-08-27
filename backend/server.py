@@ -225,6 +225,38 @@ class SMTPSettingsInput(BaseModel):
     notify_email: str
 
 
+class MailgunSettingsInput(BaseModel):
+    mailgun_domain: str = ""
+    mailgun_api_key: str = ""
+    mailgun_from_email: str = ""
+
+
+class CompanyInfoSettingsInput(BaseModel):
+    company_name: str = "Tramilex"
+    company_email: str = "info@tramilex.es"
+    phone_spain: str = ""
+    phone_chile: str = ""
+    phone_mexico: str = ""
+    phone_peru: str = ""
+    iban: str = ""
+    bank_name_eu: str = ""
+    cuenta_chile: str = ""
+    bank_name_chile: str = ""
+    extra_payment_info: str = ""
+
+
+class PresupuestoCreateInput(BaseModel):
+    recipient_name: str
+    recipient_company: str = ""
+    recipient_email: str = ""
+    recipient_address: str = ""
+    recipient_nif: str = ""
+    items: List[dict]
+    iva_rate: float = 21
+    notes: str = ""
+    payment_method: str = ""
+
+
 class DocumentStatusUpdate(BaseModel):
     status: str
 
@@ -1298,6 +1330,401 @@ async def update_smtp_settings(settings: SMTPSettingsInput, user=Depends(require
     await db.settings.update_one({"type": "smtp"}, {"$set": doc}, upsert=True)
     await log_audit("smtp_updated", user["_id"], user.get("name", ""), {"smtp_host": doc["smtp_host"]})
     return {"message": "Configuracion SMTP actualizada"}
+
+
+# --- Mailgun Settings ---
+@api_router.get("/settings/mailgun")
+async def get_mailgun_settings(user=Depends(require_admin)):
+    s = await db.settings.find_one({"type": "mailgun"}, {"_id": 0})
+    if not s:
+        return {"type": "mailgun", "mailgun_domain": "", "mailgun_api_key": "", "mailgun_from_email": ""}
+    if s.get("mailgun_api_key"):
+        s["mailgun_api_key"] = "********"
+    return s
+
+@api_router.put("/settings/mailgun")
+async def update_mailgun_settings(body: MailgunSettingsInput, user=Depends(require_admin)):
+    doc = body.model_dump()
+    doc["type"] = "mailgun"
+    if doc["mailgun_api_key"] == "********":
+        existing = await db.settings.find_one({"type": "mailgun"})
+        if existing:
+            doc["mailgun_api_key"] = existing.get("mailgun_api_key", "")
+    await db.settings.update_one({"type": "mailgun"}, {"$set": doc}, upsert=True)
+    return {"message": "Configuracion Mailgun actualizada"}
+
+
+# --- Company Info Settings ---
+@api_router.get("/settings/company-info")
+async def get_company_info(user=Depends(require_admin)):
+    s = await db.settings.find_one({"type": "company_info"}, {"_id": 0})
+    if not s:
+        return {"type": "company_info", "company_name": "Tramilex", "company_email": "info@tramilex.es",
+                "phone_spain": "", "phone_chile": "", "phone_mexico": "", "phone_peru": "",
+                "iban": "", "bank_name_eu": "", "cuenta_chile": "", "bank_name_chile": "", "extra_payment_info": ""}
+    return s
+
+@api_router.put("/settings/company-info")
+async def update_company_info(body: CompanyInfoSettingsInput, user=Depends(require_admin)):
+    doc = body.model_dump()
+    doc["type"] = "company_info"
+    await db.settings.update_one({"type": "company_info"}, {"$set": doc}, upsert=True)
+    return {"message": "Datos de empresa actualizados"}
+
+
+# --- Presupuestos (Quotes/Budgets) ---
+@api_router.get("/presupuestos/next-number")
+async def get_next_presupuesto_number(user=Depends(require_staff_or_admin)):
+    last = await db.presupuestos.find_one(sort=[("number", -1)])
+    next_num = (last["number"] + 1) if last else 1453
+    return {"next_number": next_num}
+
+
+@api_router.post("/presupuestos")
+async def create_presupuesto(body: PresupuestoCreateInput, user=Depends(require_staff_or_admin)):
+    if not body.recipient_name or not body.items:
+        raise HTTPException(status_code=400, detail="Nombre destinatario e items son obligatorios")
+
+    last = await db.presupuestos.find_one(sort=[("number", -1)])
+    number = (last["number"] + 1) if last else 1453
+
+    subtotal = sum(item.get("amount", 0) * item.get("quantity", 1) for item in body.items)
+    iva_amount = subtotal * (body.iva_rate / 100) if body.iva_rate > 0 else 0
+    total = subtotal + iva_amount
+
+    doc = {
+        "number": number,
+        "recipient_name": body.recipient_name,
+        "recipient_company": body.recipient_company,
+        "recipient_email": body.recipient_email,
+        "recipient_address": body.recipient_address,
+        "recipient_nif": body.recipient_nif,
+        "items": body.items,
+        "subtotal": round(subtotal, 2),
+        "iva_rate": body.iva_rate,
+        "iva_amount": round(iva_amount, 2),
+        "total": round(total, 2),
+        "notes": body.notes,
+        "payment_method": body.payment_method,
+        "status": "emitido",
+        "created_by": user["_id"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "valid_until": (datetime.now(timezone.utc) + timedelta(days=15)).strftime("%Y-%m-%d"),
+    }
+    result = await db.presupuestos.insert_one(doc)
+    return {"id": str(result.inserted_id), "number": number, "total": total}
+
+
+@api_router.get("/presupuestos")
+async def list_presupuestos(user=Depends(require_staff_or_admin)):
+    records = []
+    async for p in db.presupuestos.find().sort("number", -1):
+        records.append({
+            "id": str(p["_id"]),
+            "number": p["number"],
+            "recipient_name": p.get("recipient_name", ""),
+            "recipient_company": p.get("recipient_company", ""),
+            "recipient_email": p.get("recipient_email", ""),
+            "subtotal": p.get("subtotal", 0),
+            "iva_rate": p.get("iva_rate", 0),
+            "iva_amount": p.get("iva_amount", 0),
+            "total": p.get("total", 0),
+            "status": p.get("status", "emitido"),
+            "created_at": p.get("created_at", ""),
+            "valid_until": p.get("valid_until", ""),
+        })
+    return records
+
+
+@api_router.get("/presupuestos/{pid}")
+async def get_presupuesto(pid: str, user=Depends(require_staff_or_admin)):
+    p = await db.presupuestos.find_one({"_id": ObjectId(pid)})
+    if not p:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    p["id"] = str(p.pop("_id"))
+    return p
+
+
+@api_router.delete("/presupuestos/{pid}")
+async def delete_presupuesto(pid: str, user=Depends(require_admin)):
+    result = await db.presupuestos.delete_one({"_id": ObjectId(pid)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+    return {"message": "Presupuesto eliminado"}
+
+
+@api_router.get("/presupuestos/{pid}/pdf")
+async def generate_presupuesto_pdf(pid: str, user=Depends(require_staff_or_admin)):
+    p = await db.presupuestos.find_one({"_id": ObjectId(pid)})
+    if not p:
+        raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
+
+    company = await db.settings.find_one({"type": "company_info"})
+    if not company:
+        company = {}
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=15*mm, bottomMargin=20*mm, leftMargin=20*mm, rightMargin=20*mm)
+    styles = getSampleStyleSheet()
+
+    title_style = ParagraphStyle('Title2', parent=styles['Normal'], fontSize=20, fontName='Helvetica-Bold', textColor=colors.HexColor('#0f172a'), spaceAfter=8*mm, leading=24)
+    subtitle_style = ParagraphStyle('Sub', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#64748b'), spaceAfter=1*mm, leading=12)
+    normal_style = ParagraphStyle('Norm', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#334155'), leading=13)
+    bold_style = ParagraphStyle('Bold', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.HexColor('#0f172a'), leading=13)
+    small_style = ParagraphStyle('Small', parent=styles['Normal'], fontSize=8, textColor=colors.HexColor('#94a3b8'), leading=11)
+    right_style = ParagraphStyle('Right', parent=styles['Normal'], fontSize=9, textColor=colors.HexColor('#334155'), alignment=TA_RIGHT)
+
+    elements = []
+
+    # Header with logo
+    try:
+        import urllib.request
+        logo_path = "/tmp/tramilex_logo.png"
+        urllib.request.urlretrieve("https://customer-assets-lxgj4vgw.emergentagent.net/job_inmigra-docs/artifacts/8hv3nj18_tramilex_logo_1600x900.png", logo_path)
+        logo = RLImage(logo_path, width=50*mm, height=28*mm)
+        logo.hAlign = 'LEFT'
+        elements.append(logo)
+    except Exception:
+        elements.append(Paragraph("TRAMILEX", title_style))
+
+    elements.append(Spacer(1, 3*mm))
+
+    # Company info
+    co_name = company.get("company_name", "Tramilex")
+    co_email = company.get("company_email", "info@tramilex.es")
+    phones = []
+    if company.get("phone_spain"): phones.append(f"Espana: {company['phone_spain']}")
+    if company.get("phone_chile"): phones.append(f"Chile: {company['phone_chile']}")
+    if company.get("phone_mexico"): phones.append(f"Mexico: {company['phone_mexico']}")
+    if company.get("phone_peru"): phones.append(f"Peru: {company['phone_peru']}")
+    phones_str = " | ".join(phones) if phones else ""
+
+    elements.append(Paragraph(f"<b>{co_name}</b> | {co_email}", normal_style))
+    if phones_str:
+        elements.append(Paragraph(phones_str, small_style))
+    elements.append(Spacer(1, 6*mm))
+
+    # Presupuesto header
+    created_date = datetime.fromisoformat(p['created_at']).strftime('%d/%m/%Y')
+    valid_date = p.get('valid_until', '')
+    try:
+        valid_date_fmt = datetime.strptime(valid_date, '%Y-%m-%d').strftime('%d/%m/%Y')
+    except Exception:
+        valid_date_fmt = valid_date
+
+    elements.append(Paragraph(f"PRESUPUESTO N. {p['number']}", title_style))
+    elements.append(Paragraph(f"Fecha: {created_date}  |  Validez: 15 dias (hasta {valid_date_fmt})", subtitle_style))
+    elements.append(Spacer(1, 5*mm))
+
+    # Recipient
+    elements.append(Paragraph("<b>DATOS DEL DESTINATARIO</b>", bold_style))
+    elements.append(Spacer(1, 2*mm))
+    recipient_lines = [p.get("recipient_name", "")]
+    if p.get("recipient_company"): recipient_lines.append(p["recipient_company"])
+    if p.get("recipient_nif"): recipient_lines.append(f"NIF/CIF: {p['recipient_nif']}")
+    if p.get("recipient_address"): recipient_lines.append(p["recipient_address"])
+    if p.get("recipient_email"): recipient_lines.append(p["recipient_email"])
+    elements.append(Paragraph("<br/>".join(recipient_lines), normal_style))
+    elements.append(Spacer(1, 6*mm))
+
+    # Items table
+    header_data = [
+        Paragraph("<b>Concepto</b>", ParagraphStyle('th', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white)),
+        Paragraph("<b>Cant.</b>", ParagraphStyle('th', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_CENTER)),
+        Paragraph("<b>Precio</b>", ParagraphStyle('th', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_RIGHT)),
+        Paragraph("<b>Total</b>", ParagraphStyle('th', fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_RIGHT)),
+    ]
+    table_data = [header_data]
+    for item in p.get("items", []):
+        qty = item.get("quantity", 1)
+        amt = item.get("amount", 0)
+        table_data.append([
+            Paragraph(item.get("concept", ""), normal_style),
+            Paragraph(str(qty), ParagraphStyle('c', fontSize=9, alignment=TA_CENTER, textColor=colors.HexColor('#334155'))),
+            Paragraph(f"{amt:,.2f} EUR", right_style),
+            Paragraph(f"{qty * amt:,.2f} EUR", right_style),
+        ])
+
+    col_widths = [90*mm, 18*mm, 30*mm, 30*mm]
+    t = Table(table_data, colWidths=col_widths, repeatRows=1)
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#0f172a')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, 0), 9),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 8),
+        ('TOPPADDING', (0, 0), (-1, 0), 8),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.white),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#f8fafc')]),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor('#e2e8f0')),
+        ('TOPPADDING', (0, 1), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 6),
+        ('LEFTPADDING', (0, 0), (-1, -1), 8),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 4*mm))
+
+    # Totals
+    totals_data = [
+        ["Subtotal", f"{p.get('subtotal', 0):,.2f} EUR"],
+    ]
+    if p.get("iva_rate", 0) > 0:
+        totals_data.append([f"IVA ({p['iva_rate']:.0f}%)", f"{p.get('iva_amount', 0):,.2f} EUR"])
+    totals_data.append(["TOTAL", f"{p.get('total', 0):,.2f} EUR"])
+
+    tt = Table(totals_data, colWidths=[130*mm, 38*mm])
+    tt.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (0, -1), 'RIGHT'),
+        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+        ('FONTNAME', (0, -1), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('TEXTCOLOR', (0, 0), (-1, -2), colors.HexColor('#334155')),
+        ('TEXTCOLOR', (0, -1), (-1, -1), colors.HexColor('#0f172a')),
+        ('FONTSIZE', (0, -1), (-1, -1), 12),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LINEABOVE', (0, -1), (-1, -1), 1, colors.HexColor('#0f172a')),
+    ]))
+    elements.append(tt)
+    elements.append(Spacer(1, 8*mm))
+
+    # Payment info
+    elements.append(Paragraph("<b>DATOS DE PAGO</b>", bold_style))
+    elements.append(Spacer(1, 2*mm))
+    pay_lines = []
+    if p.get("payment_method"): pay_lines.append(f"Metodo: {p['payment_method']}")
+    if company.get("iban"): pay_lines.append(f"IBAN: {company['iban']}")
+    if company.get("bank_name_eu"): pay_lines.append(f"Banco: {company['bank_name_eu']}")
+    if company.get("cuenta_chile"): pay_lines.append(f"Cuenta Chile: {company['cuenta_chile']}")
+    if company.get("bank_name_chile"): pay_lines.append(f"Banco Chile: {company['bank_name_chile']}")
+    if company.get("extra_payment_info"): pay_lines.append(company['extra_payment_info'])
+    if pay_lines:
+        elements.append(Paragraph("<br/>".join(pay_lines), normal_style))
+    else:
+        elements.append(Paragraph("Consultar datos de pago con Tramilex", normal_style))
+    elements.append(Spacer(1, 6*mm))
+
+    # Notes
+    if p.get("notes"):
+        elements.append(Paragraph("<b>OBSERVACIONES</b>", bold_style))
+        elements.append(Spacer(1, 2*mm))
+        elements.append(Paragraph(p["notes"], normal_style))
+        elements.append(Spacer(1, 6*mm))
+
+    # Validity notice
+    elements.append(Spacer(1, 4*mm))
+    valid_until_str = p.get('valid_until', '')
+    try:
+        valid_until_fmt = datetime.strptime(valid_until_str, '%Y-%m-%d').strftime('%d/%m/%Y')
+    except Exception:
+        valid_until_fmt = valid_until_str
+    elements.append(Paragraph(f"Este presupuesto tiene una validez de 15 dias a partir de su fecha de emision ({valid_until_fmt}).", small_style))
+    elements.append(Paragraph(f"{co_name} - {co_email}", small_style))
+
+    doc.build(elements)
+    buffer.seek(0)
+    filename = f"Presupuesto_{p['number']}.pdf"
+    return StreamingResponse(buffer, media_type="application/pdf",
+                             headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+# --- Appointment Reminder (called periodically) ---
+@api_router.post("/citas/send-reminders")
+async def send_appointment_reminders(user=Depends(require_admin)):
+    now = datetime.now(timezone.utc)
+    tomorrow = now + timedelta(hours=24)
+    tomorrow_date = tomorrow.strftime("%Y-%m-%d")
+
+    appointments_tomorrow = await db.appointments.find({
+        "date": tomorrow_date,
+        "status": "confirmed",
+        "reminder_sent": {"$ne": True}
+    }).to_list(100)
+
+    sent = 0
+    for appt in appointments_tomorrow:
+        _send_appointment_reminder(appt)
+        await db.appointments.update_one({"_id": appt["_id"]}, {"$set": {"reminder_sent": True}})
+        sent += 1
+
+    return {"message": f"{sent} recordatorios enviados"}
+
+
+def _send_appointment_reminder(appt):
+    try:
+        settings = sync_db.settings.find_one({"type": "smtp"})
+        if not settings or not settings.get("smtp_host"):
+            logger.warning("SMTP not configured for reminders")
+            return
+
+        date_str = appt.get("date", "")
+        time_str = appt.get("time", "")
+        name = f"{appt.get('first_name', '')} {appt.get('last_name', '')}"
+        office = f"{appt.get('office', '')}, {appt.get('office_detail', '')}"
+
+        reminder_body = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #0f172a;">Recordatorio de Cita</h2>
+            <p>Hola <strong>{name}</strong>,</p>
+            <p>Le recordamos que tiene una cita programada para manana:</p>
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                <p style="margin: 4px 0;"><strong>Fecha:</strong> {date_str}</p>
+                <p style="margin: 4px 0;"><strong>Hora:</strong> {time_str}</p>
+                <p style="margin: 4px 0;"><strong>Duracion:</strong> 45 minutos</p>
+                <p style="margin: 4px 0;"><strong>Lugar:</strong> {office}</p>
+            </div>
+            <p>Por favor, recuerde llegar puntualmente y traer toda la documentacion necesaria.</p>
+            <p style="margin-top: 24px;">Un cordial saludo,<br><strong>El equipo de Tramilex</strong></p>
+        </div>
+        """
+
+        # Send to client
+        msg = MIMEMultipart()
+        msg["From"] = settings["from_email"]
+        msg["To"] = appt["email"]
+        msg["Subject"] = "Recordatorio de Cita - Tramilex"
+        msg.attach(MIMEText(reminder_body, "html"))
+
+        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
+        server.starttls()
+        server.login(settings["smtp_user"], settings["smtp_password"])
+        server.send_message(msg)
+
+        # Also send to admin
+        admin_body = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #0f172a;">Recordatorio - Cita Manana</h2>
+            <p>Tiene una cita programada para manana con:</p>
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                <p style="margin: 4px 0;"><strong>Cliente:</strong> {name}</p>
+                <p style="margin: 4px 0;"><strong>Email:</strong> {appt.get('email', '')}</p>
+                <p style="margin: 4px 0;"><strong>Telefono:</strong> {appt.get('phone', '')}</p>
+                <p style="margin: 4px 0;"><strong>Fecha:</strong> {date_str}</p>
+                <p style="margin: 4px 0;"><strong>Hora:</strong> {time_str}</p>
+                <p style="margin: 4px 0;"><strong>Lugar:</strong> {office}</p>
+            </div>
+        </div>
+        """
+        admin_msg = MIMEMultipart()
+        admin_msg["From"] = settings["from_email"]
+        admin_msg["To"] = settings.get("notify_email", settings["from_email"])
+        admin_msg["Subject"] = f"Recordatorio - Cita manana con {name}"
+        admin_msg.attach(MIMEText(admin_body, "html"))
+        server.send_message(admin_msg)
+        server.quit()
+
+        logger.info(f"Reminder sent for appointment {appt.get('date')} {appt.get('time')} - {name}")
+    except Exception as e:
+        logger.error(f"Error sending reminder: {e}")
 
 
 # --- Email notification (background task) ---

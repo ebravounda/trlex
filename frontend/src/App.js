@@ -17,6 +17,7 @@ import AdminStaff from '@/pages/AdminStaff';
 import AdminInbox from '@/pages/AdminInbox';
 import AdminContabilidad from '@/pages/AdminContabilidad';
 import AdminCitas from '@/pages/AdminCitas';
+import AdminPresupuestos from '@/pages/AdminPresupuestos';
 import BookingPage from '@/pages/BookingPage';
 import PaymentSuccess from '@/pages/PaymentSuccess';
 import PaymentCancel from '@/pages/PaymentCancel';
@@ -82,6 +83,7 @@ function AppRoutes() {
         <Route path="inbox" element={<AdminInbox />} />
         <Route path="contabilidad" element={<AdminContabilidad />} />
         <Route path="citas" element={<AdminCitas />} />
+        <Route path="presupuestos" element={<AdminPresupuestos />} />
         <Route path="tramites" element={<AdminTramites />} />
         <Route path="email" element={<AdminEmail />} />
         <Route path="audit" element={<AdminAudit />} />
