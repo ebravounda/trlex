@@ -14,6 +14,7 @@ export default function AdminClients() {
   const [countries, setCountries] = useState([]);
   const [search, setSearch] = useState('');
   const [countryFilter, setCountryFilter] = useState('');
+  const [tramiteCountryFilter, setTramiteCountryFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
@@ -82,7 +83,7 @@ export default function AdminClients() {
           />
         </div>
         <Select value={countryFilter} onValueChange={v => setCountryFilter(v === '_all' ? '' : v)}>
-          <SelectTrigger className="w-full sm:w-56 h-10 bg-white border-slate-300" data-testid="filter-country-select">
+          <SelectTrigger className="w-full sm:w-48 h-10 bg-white border-slate-300" data-testid="filter-country-select">
             <SelectValue placeholder="Pais de origen" />
           </SelectTrigger>
           <SelectContent>
@@ -92,16 +93,32 @@ export default function AdminClients() {
             ))}
           </SelectContent>
         </Select>
+        <Select value={tramiteCountryFilter} onValueChange={v => setTramiteCountryFilter(v === '_all' ? '' : v)}>
+          <SelectTrigger className="w-full sm:w-48 h-10 bg-white border-slate-300" data-testid="filter-tramite-country">
+            <SelectValue placeholder="Tramite en..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all">Todos</SelectItem>
+            <SelectItem value="espana">Espana</SelectItem>
+            <SelectItem value="chile">Chile</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       {/* Stats */}
+      {(() => {
+        const displayClients = tramiteCountryFilter
+          ? clients.filter(c => c.country === tramiteCountryFilter)
+          : clients;
+        return (
+          <>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
         <div className="bg-white border border-slate-200 rounded-lg p-5 flex items-center gap-4 shadow-sm">
           <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
             <Users className="w-5 h-5 text-slate-600" strokeWidth={1.5} />
           </div>
           <div>
-            <p className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>{clients.length}</p>
+            <p className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>{displayClients.length}</p>
             <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Clientes registrados</p>
           </div>
         </div>
@@ -111,7 +128,7 @@ export default function AdminClients() {
           </div>
           <div>
             <p className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>
-              {clients.reduce((sum, c) => sum + (c.document_count || 0), 0)}
+              {displayClients.reduce((sum, c) => sum + (c.document_count || 0), 0)}
             </p>
             <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Documentos totales</p>
           </div>
@@ -123,11 +140,11 @@ export default function AdminClients() {
         <div className="flex items-center justify-center py-16">
           <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-900 border-t-transparent" />
         </div>
-      ) : clients.length === 0 ? (
+      ) : displayClients.length === 0 ? (
         <div className="bg-white border border-slate-200 rounded-lg p-16 text-center">
           <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
           <p className="text-sm text-slate-500">
-            {search || countryFilter ? 'No se encontraron clientes con los filtros aplicados' : 'Aun no hay clientes registrados'}
+            {search || countryFilter || tramiteCountryFilter ? 'No se encontraron clientes con los filtros aplicados' : 'Aun no hay clientes registrados'}
           </p>
         </div>
       ) : (
@@ -138,13 +155,13 @@ export default function AdminClients() {
                 <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">Nombre</TableHead>
                 <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4">NIE / Pasaporte</TableHead>
                 <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4 hidden md:table-cell">Email</TableHead>
-                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4 hidden lg:table-cell">Pais origen</TableHead>
+                <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4 hidden lg:table-cell">Tramite en</TableHead>
                 <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4 text-center">Docs</TableHead>
                 <TableHead className="text-xs font-bold uppercase tracking-wider text-slate-500 py-3 px-4 text-right">Acciones</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {clients.map((client) => (
+              {displayClients.map((client) => (
                 <TableRow
                   key={client.id}
                   className="hover:bg-slate-50 transition-colors cursor-pointer group"
@@ -162,7 +179,9 @@ export default function AdminClients() {
                     </div>
                   </TableCell>
                   <TableCell className="py-3 px-4 hidden md:table-cell text-sm text-slate-500">{client.email}</TableCell>
-                  <TableCell className="py-3 px-4 hidden lg:table-cell text-sm text-slate-500">{client.origin_country || '-'}</TableCell>
+                  <TableCell className="py-3 px-4 hidden lg:table-cell text-sm text-slate-500">
+                    {client.country === 'espana' ? 'Espana' : client.country === 'chile' ? 'Chile' : '-'}
+                  </TableCell>
                   <TableCell className="py-3 px-4 text-center">
                     <Badge variant="secondary" className="text-xs">
                       {client.document_count || 0}
@@ -188,6 +207,9 @@ export default function AdminClients() {
           </Table>
         </div>
       )}
+          </>
+        );
+      })()}
     </div>
   );
 }

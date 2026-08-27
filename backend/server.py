@@ -1508,6 +1508,11 @@ async def list_companies(user=Depends(require_admin)):
     async for c in db.companies.find().sort("created_at", -1):
         worker_count = await db.company_workers.count_documents({"company_id": str(c["_id"])})
         tramite_count = await db.company_tramites.count_documents({"company_id": str(c["_id"])})
+        # Get tramite countries
+        tramite_countries = set()
+        async for t in db.company_tramites.find({"company_id": str(c["_id"])}):
+            if t.get("country"):
+                tramite_countries.add(t["country"])
         companies.append({
             "id": str(c["_id"]),
             "name": c.get("name", ""),
@@ -1517,6 +1522,7 @@ async def list_companies(user=Depends(require_admin)):
             "contact_person": c.get("contact_person", ""),
             "worker_count": worker_count,
             "tramite_count": tramite_count,
+            "tramite_countries": list(tramite_countries),
             "created_at": c.get("created_at", "")
         })
     return companies

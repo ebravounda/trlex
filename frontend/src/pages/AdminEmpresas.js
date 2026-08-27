@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import { Building2, Plus, Search, Users, FileText, Trash2, Eye } from 'lucide-react';
@@ -15,6 +16,7 @@ export default function AdminEmpresas() {
   const [showCreate, setShowCreate] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createdCreds, setCreatedCreds] = useState(null);
+  const [countryFilter, setCountryFilter] = useState('');
   const navigate = useNavigate();
 
   const [form, setForm] = useState({
@@ -65,11 +67,13 @@ export default function AdminEmpresas() {
     toast.success('Credenciales copiadas al portapapeles');
   };
 
-  const filtered = companies.filter(c =>
-    c.name.toLowerCase().includes(search.toLowerCase()) ||
-    c.cif_nif.toLowerCase().includes(search.toLowerCase()) ||
-    c.email.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtered = companies.filter(c => {
+    const matchSearch = c.name.toLowerCase().includes(search.toLowerCase()) ||
+      c.cif_nif.toLowerCase().includes(search.toLowerCase()) ||
+      c.email.toLowerCase().includes(search.toLowerCase());
+    const matchCountry = !countryFilter || (c.tramite_countries || []).includes(countryFilter);
+    return matchSearch && matchCountry;
+  });
 
   return (
     <div className="space-y-6" data-testid="admin-empresas">
@@ -83,15 +87,27 @@ export default function AdminEmpresas() {
         </Button>
       </div>
 
-      <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-3 py-2">
-        <Search className="w-4 h-4 text-slate-400" />
-        <Input
-          placeholder="Buscar por nombre, CIF/NIF o email..."
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          className="border-0 focus-visible:ring-0 p-0 h-auto"
-          data-testid="search-companies"
-        />
+      <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg px-3 py-2 flex-1">
+          <Search className="w-4 h-4 text-slate-400" />
+          <Input
+            placeholder="Buscar por nombre, CIF/NIF o email..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="border-0 focus-visible:ring-0 p-0 h-auto"
+            data-testid="search-companies"
+          />
+        </div>
+        <Select value={countryFilter || '_all'} onValueChange={v => setCountryFilter(v === '_all' ? '' : v)}>
+          <SelectTrigger className="w-full sm:w-48 bg-white" data-testid="filter-company-country">
+            <SelectValue placeholder="Tramite en..." />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="_all">Todos</SelectItem>
+            <SelectItem value="espana">Espana</SelectItem>
+            <SelectItem value="chile">Chile</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

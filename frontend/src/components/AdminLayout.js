@@ -35,7 +35,7 @@ function SidebarContent({ onClose, inboxUnread }) {
     <div className="flex flex-col h-full">
       <div className="p-6 border-b border-slate-200">
         <div className="flex items-center justify-between">
-          <img src={LOGO_URL} alt="Tramilex" className="h-10 object-contain" data-testid="admin-logo" />
+          <img src={LOGO_URL} alt="Tramilex" className="h-14 object-contain" data-testid="admin-logo" />
           {onClose && (
             <button onClick={onClose} className="md:hidden" data-testid="close-sidebar-btn">
               <X className="w-5 h-5 text-slate-500" />
