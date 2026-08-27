@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
-import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog, Inbox } from 'lucide-react';
+import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog, Inbox, DollarSign, CalendarCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect, useCallback } from 'react';
 
@@ -13,7 +13,9 @@ const LOGO_URL = "https://customer-assets-lxgj4vgw.emergentagent.net/job_inmigra
 const navItems = [
   { to: '/admin/clients', label: 'Clientes', icon: Users },
   { to: '/admin/empresas', label: 'Empresas', icon: Building2 },
+  { to: '/admin/citas', label: 'Citas', icon: CalendarCheck },
   { to: '/admin/tareas', label: 'Tareas', icon: ListTodo },
+  { to: '/admin/contabilidad', label: 'Contabilidad', icon: DollarSign },
   { to: '/admin/tramites', label: 'Tramites', icon: FileText },
   { to: '/admin/equipo', label: 'Equipo', icon: UserCog },
   { to: '/admin/inbox', label: 'Notificaciones email', icon: Inbox },
@@ -22,7 +24,7 @@ const navItems = [
   { to: '/admin/settings', label: 'Configuracion', icon: Settings },
 ];
 
-function SidebarContent({ onClose, inboxUnread }) {
+function SidebarContent({ onClose, inboxUnread, citasCount }) {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
@@ -64,6 +66,9 @@ function SidebarContent({ onClose, inboxUnread }) {
             {to === '/admin/inbox' && inboxUnread > 0 && (
               <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{inboxUnread > 9 ? '9+' : inboxUnread}</span>
             )}
+            {to === '/admin/citas' && citasCount > 0 && (
+              <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center" data-testid="citas-badge">{citasCount > 9 ? '9+' : citasCount}</span>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -89,6 +94,7 @@ function SidebarContent({ onClose, inboxUnread }) {
 export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inboxUnread, setInboxUnread] = useState(0);
+  const [citasCount, setCitasCount] = useState(0);
   const { user } = useAuth();
 
   const checkInbox = useCallback(async () => {
@@ -100,17 +106,25 @@ export default function AdminLayout() {
     } catch {}
   }, []);
 
+  const checkCitas = useCallback(async () => {
+    try {
+      const res = await api.get('/citas/unconfirmed-count');
+      setCitasCount(res.data.count || 0);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     checkInbox();
-    const interval = setInterval(checkInbox, 60000);
+    checkCitas();
+    const interval = setInterval(() => { checkInbox(); checkCitas(); }, 60000);
     return () => clearInterval(interval);
-  }, [checkInbox]);
+  }, [checkInbox, checkCitas]);
 
   return (
     <div className="min-h-screen bg-slate-50 flex" data-testid="admin-layout">
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 flex-col fixed inset-y-0 left-0 z-30">
-        <SidebarContent inboxUnread={inboxUnread} />
+        <SidebarContent inboxUnread={inboxUnread} citasCount={citasCount} />
       </aside>
 
       {/* Mobile overlay */}
@@ -118,7 +132,7 @@ export default function AdminLayout() {
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl z-50">
-            <SidebarContent onClose={() => setSidebarOpen(false)} inboxUnread={inboxUnread} />
+            <SidebarContent onClose={() => setSidebarOpen(false)} inboxUnread={inboxUnread} citasCount={citasCount} />
           </aside>
         </div>
       )}

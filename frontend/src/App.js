@@ -15,6 +15,11 @@ import AdminEmpresaDetail from '@/pages/AdminEmpresaDetail';
 import AdminTareas from '@/pages/AdminTareas';
 import AdminStaff from '@/pages/AdminStaff';
 import AdminInbox from '@/pages/AdminInbox';
+import AdminContabilidad from '@/pages/AdminContabilidad';
+import AdminCitas from '@/pages/AdminCitas';
+import BookingPage from '@/pages/BookingPage';
+import PaymentSuccess from '@/pages/PaymentSuccess';
+import PaymentCancel from '@/pages/PaymentCancel';
 import CompanyDashboard from '@/pages/CompanyDashboard';
 import AdminLayout from '@/components/AdminLayout';
 import { Toaster } from 'sonner';
@@ -48,6 +53,9 @@ function AppRoutes() {
             : <AuthPage />
         }
       />
+      <Route path="/citas/reservar" element={<BookingPage />} />
+      <Route path="/citas/confirmada" element={<PaymentSuccess />} />
+      <Route path="/citas/cancelada" element={<PaymentCancel />} />
       <Route
         path="/dashboard"
         element={
@@ -72,6 +80,8 @@ function AppRoutes() {
         <Route path="tareas" element={<AdminTareas />} />
         <Route path="equipo" element={<AdminStaff />} />
         <Route path="inbox" element={<AdminInbox />} />
+        <Route path="contabilidad" element={<AdminContabilidad />} />
+        <Route path="citas" element={<AdminCitas />} />
         <Route path="tramites" element={<AdminTramites />} />
         <Route path="email" element={<AdminEmail />} />
         <Route path="audit" element={<AdminAudit />} />

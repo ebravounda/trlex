@@ -26,6 +26,8 @@ import io
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from tramites_data import TRAMITES, get_tramites_by_country, get_tramite_docs
+import stripe
+import pymongo
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -39,6 +41,14 @@ db = mongo_client[os.environ['DB_NAME']]
 # JWT
 JWT_SECRET = os.environ['JWT_SECRET']
 JWT_ALGORITHM = "HS256"
+
+# Stripe
+stripe.api_key = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+
+# Sync MongoDB for background tasks / webhooks
+sync_mongo_client = pymongo.MongoClient(os.environ['MONGO_URL'])
+sync_db = sync_mongo_client[os.environ['DB_NAME']]
 
 # Object Storage
 STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
@@ -326,9 +336,66 @@ class TaskCommentInput(BaseModel):
     text: str
 
 
+class BillingCreateInput(BaseModel):
+    client_type: str
+    client_id: str
+    tramite_name: str = ""
+    description: str = ""
+    amount: float = 0
+    extra_per_worker: float = 0
+    worker_count: int = 0
+    notes: str = ""
+    due_date: str = ""
+
+
+class BillingUpdateInput(BaseModel):
+    tramite_name: str = ""
+    description: str = ""
+    amount: float = 0
+    extra_per_worker: float = 0
+    worker_count: int = 0
+    status: str = ""
+    notes: str = ""
+    due_date: str = ""
+
+
+class PaymentInput(BaseModel):
+    amount: float
+    method: str = ""
+    reference: str = ""
+    notes: str = ""
+
+
+class AppointmentBookInput(BaseModel):
+    first_name: str
+    last_name: str
+    email: str
+    origin_country: str
+    residence_country: str
+    address: str
+    document_id: str
+    document_type: str = "pasaporte"
+    phone: str
+    accept_terms: bool = False
+    location: str
+    office: str = ""
+    date: str
+    time: str
+    origin_url: str = ""
+
+
+class AppointmentSettingsInput(BaseModel):
+    blocked_dates: List[str] = []
+    start_hour: int = 9
+    end_hour: int = 18
+    slot_duration: int = 45
+    price_amount: int = 5000
+    price_currency: str = "eur"
+
+
 # --- Auth Routes ---
 @api_router.post("/auth/register")
-async def register(input_data: RegisterInput):
+async def register(input_data: RegisterInput, background_tasks: BackgroundTasks):
     email = input_data.email.lower().strip()
     if not email or not input_data.password or not input_data.name:
         raise HTTPException(status_code=400, detail="Nombre, email y contrasena son obligatorios")
@@ -363,6 +430,9 @@ async def register(input_data: RegisterInput):
     result = await db.users.insert_one(user_doc)
     user_id = str(result.inserted_id)
     token = create_access_token(user_id, email, "client")
+
+    # Send welcome email
+    background_tasks.add_task(send_welcome_email, email, input_data.name)
 
     return {
         "id": user_id,
@@ -2334,6 +2404,45 @@ def send_task_email(to_email, to_name, task_title, from_name, priority, descript
         logger.error(f"Error enviando email de tarea: {e}")
 
 
+def send_welcome_email(to_email, name):
+    try:
+        import pymongo
+        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
+        sync_db = sync_client[os.environ['DB_NAME']]
+        settings = sync_db.settings.find_one({"type": "smtp"})
+        sync_client.close()
+        if not settings or not settings.get("smtp_host"):
+            return
+        msg = MIMEMultipart()
+        msg["From"] = settings["from_email"]
+        msg["To"] = to_email
+        msg["Subject"] = "Bienvenido a Tramilex"
+        body = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0f172a;">Bienvenido a Tramilex!</h2>
+            <p>Hola <strong>{name}</strong>,</p>
+            <p>Gracias por registrarte en Tramilex, tu plataforma de gestion documental para tramites de inmigracion.</p>
+            <p>Desde tu panel podras:</p>
+            <ul>
+                <li>Subir los documentos requeridos para tu tramite</li>
+                <li>Ver el estado de revision de tus documentos</li>
+                <li>Comunicarte con tu abogado</li>
+            </ul>
+            <p>Accede a tu cuenta en: <a href="https://tramilex.goroky.es/login" style="color: #0369a1;">tramilex.goroky.es</a></p>
+            <p style="margin-top: 24px;">Un cordial saludo,<br><strong>El equipo de Tramilex</strong></p>
+        </div>
+        """
+        msg.attach(MIMEText(body, "html"))
+        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
+        server.starttls()
+        server.login(settings["smtp_user"], settings["smtp_password"])
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"Welcome email sent to {to_email}")
+    except Exception as e:
+        logger.error(f"Error enviando welcome email: {e}")
+
+
 # ============================
 # --- Staff Management (Admin only) ---
 # ============================
@@ -2850,6 +2959,566 @@ async def get_forward_recipients(user=Depends(require_staff_or_admin)):
     return recipients
 
 
+# ============================
+# --- Billing / Contabilidad ---
+# ============================
+
+@api_router.post("/billing")
+async def create_billing(body: BillingCreateInput, user=Depends(require_staff_or_admin)):
+    if body.client_type not in ["client", "company"]:
+        raise HTTPException(status_code=400, detail="Tipo de cliente invalido")
+
+    client_name = ""
+    client_email = ""
+    if body.client_type == "client":
+        c = await db.users.find_one({"_id": ObjectId(body.client_id)})
+        if not c: raise HTTPException(status_code=404, detail="Cliente no encontrado")
+        client_name = c.get("name", "")
+        client_email = c.get("email", "")
+    else:
+        c = await db.companies.find_one({"_id": ObjectId(body.client_id)})
+        if not c: raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        client_name = c.get("name", "")
+        client_email = c.get("email", "")
+
+    total = body.amount + (body.extra_per_worker * body.worker_count)
+
+    billing_doc = {
+        "client_type": body.client_type,
+        "client_id": body.client_id,
+        "client_name": client_name,
+        "client_email": client_email,
+        "tramite_name": body.tramite_name,
+        "description": body.description,
+        "amount": body.amount,
+        "extra_per_worker": body.extra_per_worker,
+        "worker_count": body.worker_count,
+        "total": total,
+        "paid": 0,
+        "balance": total,
+        "status": "pendiente",
+        "payments": [],
+        "notes": body.notes,
+        "due_date": body.due_date,
+        "created_by": user["_id"],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.billing.insert_one(billing_doc)
+    return {"id": str(result.inserted_id), "total": total, "message": "Registro de cobro creado"}
+
+
+@api_router.get("/billing")
+async def list_billing(user=Depends(require_staff_or_admin)):
+    records = []
+    async for b in db.billing.find().sort("created_at", -1):
+        records.append({
+            "id": str(b["_id"]),
+            "client_type": b.get("client_type", ""),
+            "client_id": b.get("client_id", ""),
+            "client_name": b.get("client_name", ""),
+            "client_email": b.get("client_email", ""),
+            "tramite_name": b.get("tramite_name", ""),
+            "description": b.get("description", ""),
+            "amount": b.get("amount", 0),
+            "extra_per_worker": b.get("extra_per_worker", 0),
+            "worker_count": b.get("worker_count", 0),
+            "total": b.get("total", 0),
+            "paid": b.get("paid", 0),
+            "balance": b.get("balance", 0),
+            "status": b.get("status", "pendiente"),
+            "payments_count": len(b.get("payments", [])),
+            "notes": b.get("notes", ""),
+            "due_date": b.get("due_date", ""),
+            "created_at": b.get("created_at", "")
+        })
+    return records
+
+
+@api_router.get("/billing/summary")
+async def billing_summary(user=Depends(require_staff_or_admin)):
+    total_facturado = 0
+    total_cobrado = 0
+    total_pendiente = 0
+    count_pending = 0
+    count_partial = 0
+    count_paid = 0
+    count_overdue = 0
+    async for b in db.billing.find():
+        total_facturado += b.get("total", 0)
+        total_cobrado += b.get("paid", 0)
+        total_pendiente += b.get("balance", 0)
+        st = b.get("status", "pendiente")
+        if st == "pendiente": count_pending += 1
+        elif st == "parcial": count_partial += 1
+        elif st == "pagado": count_paid += 1
+        elif st == "vencido": count_overdue += 1
+    return {
+        "total_facturado": total_facturado,
+        "total_cobrado": total_cobrado,
+        "total_pendiente": total_pendiente,
+        "count_pending": count_pending,
+        "count_partial": count_partial,
+        "count_paid": count_paid,
+        "count_overdue": count_overdue
+    }
+
+
+@api_router.get("/billing/{billing_id}")
+async def get_billing(billing_id: str, user=Depends(require_staff_or_admin)):
+    try:
+        b = await db.billing.find_one({"_id": ObjectId(billing_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Registro no encontrado")
+    if not b:
+        raise HTTPException(status_code=404, detail="Registro no encontrado")
+    return {
+        "id": str(b["_id"]),
+        "client_type": b.get("client_type", ""),
+        "client_id": b.get("client_id", ""),
+        "client_name": b.get("client_name", ""),
+        "client_email": b.get("client_email", ""),
+        "tramite_name": b.get("tramite_name", ""),
+        "description": b.get("description", ""),
+        "amount": b.get("amount", 0),
+        "extra_per_worker": b.get("extra_per_worker", 0),
+        "worker_count": b.get("worker_count", 0),
+        "total": b.get("total", 0),
+        "paid": b.get("paid", 0),
+        "balance": b.get("balance", 0),
+        "status": b.get("status", "pendiente"),
+        "payments": b.get("payments", []),
+        "notes": b.get("notes", ""),
+        "due_date": b.get("due_date", ""),
+        "created_at": b.get("created_at", "")
+    }
+
+
+@api_router.put("/billing/{billing_id}")
+async def update_billing(billing_id: str, body: BillingUpdateInput, user=Depends(require_staff_or_admin)):
+    update = {}
+    if body.tramite_name: update["tramite_name"] = body.tramite_name
+    if body.description is not None: update["description"] = body.description
+    if body.notes is not None: update["notes"] = body.notes
+    if body.due_date is not None: update["due_date"] = body.due_date
+    if body.status and body.status in ["pendiente", "parcial", "pagado", "vencido"]:
+        update["status"] = body.status
+    if body.amount > 0 or body.extra_per_worker > 0 or body.worker_count > 0:
+        b = await db.billing.find_one({"_id": ObjectId(billing_id)})
+        if b:
+            amt = body.amount if body.amount > 0 else b.get("amount", 0)
+            extra = body.extra_per_worker if body.extra_per_worker > 0 else b.get("extra_per_worker", 0)
+            wc = body.worker_count if body.worker_count > 0 else b.get("worker_count", 0)
+            total = amt + (extra * wc)
+            paid = b.get("paid", 0)
+            update["amount"] = amt
+            update["extra_per_worker"] = extra
+            update["worker_count"] = wc
+            update["total"] = total
+            update["balance"] = total - paid
+    if not update:
+        raise HTTPException(status_code=400, detail="No hay campos para actualizar")
+    await db.billing.update_one({"_id": ObjectId(billing_id)}, {"$set": update})
+    return {"message": "Registro actualizado"}
+
+
+@api_router.post("/billing/{billing_id}/payments")
+async def add_payment(billing_id: str, body: PaymentInput, user=Depends(require_staff_or_admin)):
+    if body.amount <= 0:
+        raise HTTPException(status_code=400, detail="El monto debe ser positivo")
+    b = await db.billing.find_one({"_id": ObjectId(billing_id)})
+    if not b:
+        raise HTTPException(status_code=404, detail="Registro no encontrado")
+
+    payment = {
+        "id": uuid.uuid4().hex[:8],
+        "amount": body.amount,
+        "method": body.method,
+        "reference": body.reference,
+        "notes": body.notes,
+        "recorded_by": user.get("name", ""),
+        "date": datetime.now(timezone.utc).isoformat()
+    }
+    new_paid = b.get("paid", 0) + body.amount
+    new_balance = b.get("total", 0) - new_paid
+    new_status = "pagado" if new_balance <= 0 else "parcial"
+
+    await db.billing.update_one(
+        {"_id": ObjectId(billing_id)},
+        {"$push": {"payments": payment}, "$set": {"paid": new_paid, "balance": max(0, new_balance), "status": new_status}}
+    )
+    return {"message": "Pago registrado", "paid": new_paid, "balance": max(0, new_balance), "status": new_status}
+
+
+@api_router.delete("/billing/{billing_id}")
+async def delete_billing(billing_id: str, user=Depends(require_admin)):
+    result = await db.billing.delete_one({"_id": ObjectId(billing_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Registro no encontrado")
+    return {"message": "Registro eliminado"}
+
+
+# ============================
+# --- Citas / Appointments ---
+# ============================
+
+APPOINTMENT_OFFICES = {
+    "chile": {"name": "Oficina Santiago", "detail": "Reg. Metropolitana"},
+    "spain": {"name": "Oficina Madrid", "detail": "Madrid"},
+}
+
+@api_router.get("/citas/config")
+async def get_citas_config():
+    config = await db.appointment_settings.find_one({"type": "config"})
+    blocked = []
+    if config:
+        blocked = config.get("blocked_dates", [])
+    return {
+        "offices": APPOINTMENT_OFFICES,
+        "blocked_dates": blocked,
+        "start_hour": config.get("start_hour", 9) if config else 9,
+        "end_hour": config.get("end_hour", 18) if config else 18,
+        "slot_duration": config.get("slot_duration", 45) if config else 45,
+        "price_amount": config.get("price_amount", 5000) if config else 5000,
+        "price_currency": config.get("price_currency", "eur") if config else "eur",
+    }
+
+
+@api_router.put("/citas/config")
+async def update_citas_config(body: AppointmentSettingsInput, user=Depends(require_admin)):
+    await db.appointment_settings.update_one(
+        {"type": "config"},
+        {"$set": {
+            "type": "config",
+            "blocked_dates": body.blocked_dates,
+            "start_hour": body.start_hour,
+            "end_hour": body.end_hour,
+            "slot_duration": body.slot_duration,
+            "price_amount": body.price_amount,
+            "price_currency": body.price_currency,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }},
+        upsert=True
+    )
+    return {"message": "Configuracion actualizada"}
+
+
+@api_router.get("/citas/available-slots")
+async def get_available_slots(date: str, location: str):
+    # Validate date is not in the past
+    try:
+        slot_date = datetime.strptime(date, "%Y-%m-%d").date()
+        if slot_date <= datetime.now(timezone.utc).date():
+            return {"slots": [], "blocked": True}
+    except ValueError:
+        return {"slots": [], "blocked": True}
+
+    config = await db.appointment_settings.find_one({"type": "config"})
+    blocked_dates = config.get("blocked_dates", []) if config else []
+    if date in blocked_dates:
+        return {"slots": [], "blocked": True}
+
+    start_h = config.get("start_hour", 9) if config else 9
+    end_h = config.get("end_hour", 18) if config else 18
+    duration = config.get("slot_duration", 45) if config else 45
+
+    # Generate all possible slots
+    slots = []
+    current_min = start_h * 60
+    end_min = end_h * 60
+    while current_min + duration <= end_min:
+        h = current_min // 60
+        m = current_min % 60
+        slots.append(f"{h:02d}:{m:02d}")
+        current_min += duration
+
+    # Remove already booked slots
+    booked = await db.appointments.find(
+        {"date": date, "location": location, "status": {"$in": ["pending_payment", "confirmed"]}}
+    ).to_list(100)
+    booked_times = {a["time"] for a in booked}
+    available = [s for s in slots if s not in booked_times]
+
+    return {"slots": available, "blocked": False}
+
+
+@api_router.post("/citas/book")
+async def book_appointment(body: AppointmentBookInput):
+    if not body.accept_terms:
+        raise HTTPException(status_code=400, detail="Debe aceptar los terminos y condiciones")
+    if not body.first_name or not body.last_name or not body.email or not body.phone:
+        raise HTTPException(status_code=400, detail="Todos los campos obligatorios son requeridos")
+    if body.location not in ["chile", "spain"]:
+        raise HTTPException(status_code=400, detail="Ubicacion invalida")
+
+    # Validate date
+    try:
+        slot_date = datetime.strptime(body.date, "%Y-%m-%d").date()
+        if slot_date <= datetime.now(timezone.utc).date():
+            raise HTTPException(status_code=400, detail="La fecha debe ser futura")
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Formato de fecha invalido")
+
+    # Check slot still available
+    existing = await db.appointments.find_one({
+        "date": body.date, "time": body.time, "location": body.location,
+        "status": {"$in": ["pending_payment", "confirmed"]}
+    })
+    if existing:
+        raise HTTPException(status_code=409, detail="Este horario ya no esta disponible")
+
+    config = await db.appointment_settings.find_one({"type": "config"})
+    price_amount = config.get("price_amount", 5000) if config else 5000
+    price_currency = config.get("price_currency", "eur") if config else "eur"
+
+    office_info = APPOINTMENT_OFFICES.get(body.location, {})
+    origin_url = body.origin_url or "https://tramilex.goroky.es"
+
+    # Create Stripe checkout session FIRST (before DB insert to avoid orphans)
+    try:
+        session = stripe.checkout.Session.create(
+            line_items=[{
+                "price_data": {
+                    "currency": price_currency,
+                    "unit_amount": price_amount,
+                    "product_data": {"name": "Consulta de Inmigracion - 45 minutos"},
+                },
+                "quantity": 1,
+            }],
+            mode="payment",
+            success_url=f"{origin_url}/citas/confirmada?session_id={{CHECKOUT_SESSION_ID}}",
+            cancel_url=f"{origin_url}/citas/cancelada",
+            metadata={"location": body.location, "date": body.date, "time": body.time},
+            customer_email=body.email.lower().strip(),
+        )
+    except Exception as e:
+        logger.error(f"Stripe session error: {e}")
+        raise HTTPException(status_code=500, detail="Error creando sesion de pago")
+
+    # Now create appointment doc
+    appt_doc = {
+        "first_name": body.first_name,
+        "last_name": body.last_name,
+        "email": body.email.lower().strip(),
+        "origin_country": body.origin_country,
+        "residence_country": body.residence_country,
+        "address": body.address,
+        "document_id": body.document_id,
+        "document_type": body.document_type,
+        "phone": body.phone,
+        "location": body.location,
+        "office": office_info.get("name", ""),
+        "office_detail": office_info.get("detail", ""),
+        "date": body.date,
+        "time": body.time,
+        "status": "pending_payment",
+        "payment_session_id": session.id,
+        "payment_status": "pending",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    result = await db.appointments.insert_one(appt_doc)
+    appt_id = str(result.inserted_id)
+
+    # Update Stripe session metadata with appointment_id
+    stripe.checkout.Session.modify(session.id, metadata={
+        "appointment_id": appt_id,
+        "location": body.location,
+        "date": body.date,
+        "time": body.time,
+    })
+
+    # Save payment transaction
+    sync_db.payment_transactions.insert_one({
+        "session_id": session.id,
+        "appointment_id": appt_id,
+        "amount": price_amount,
+        "currency": price_currency,
+        "status": "initiated",
+        "payment_status": "pending",
+        "created_at": datetime.now(timezone.utc),
+        "updated_at": datetime.now(timezone.utc),
+    })
+
+    return {"checkout_url": session.url, "session_id": session.id, "appointment_id": appt_id}
+
+
+@api_router.get("/citas/payment-status/{session_id}")
+async def get_appointment_payment_status(session_id: str):
+    record = sync_db.payment_transactions.find_one({"session_id": session_id})
+    if not record:
+        raise HTTPException(status_code=404, detail="Transaccion no encontrada")
+
+    if record.get("payment_status") != "paid":
+        try:
+            s = stripe.checkout.Session.retrieve(session_id)
+            if s.payment_status == "paid" or s.status == "complete":
+                sync_db.payment_transactions.update_one(
+                    {"session_id": session_id, "payment_status": {"$ne": "paid"}},
+                    {"$set": {"status": "completed", "payment_status": "paid",
+                              "updated_at": datetime.now(timezone.utc)}}
+                )
+                # Confirm the appointment
+                appt_id = record.get("appointment_id", "")
+                if appt_id:
+                    sync_db.appointments.update_one(
+                        {"_id": ObjectId(appt_id)},
+                        {"$set": {"status": "confirmed", "payment_status": "paid",
+                                  "confirmed_at": datetime.now(timezone.utc).isoformat()}}
+                    )
+                record = sync_db.payment_transactions.find_one({"session_id": session_id})
+        except Exception:
+            pass
+
+    return {
+        "session_id": record["session_id"],
+        "status": record["status"],
+        "payment_status": record["payment_status"],
+        "appointment_id": record.get("appointment_id", ""),
+    }
+
+
+@api_router.post("/stripe/webhook")
+async def stripe_webhook(request: Request):
+    payload = await request.body()
+    sig = request.headers.get("stripe-signature", "")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig, STRIPE_WEBHOOK_SECRET)
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(400, "Firma invalida")
+    except Exception:
+        raise HTTPException(400, "Error procesando webhook")
+
+    obj = event["data"]["object"]
+    event_type = event["type"]
+
+    if event_type == "checkout.session.completed":
+        session_id = obj["id"]
+        appt_id = obj.get("metadata", {}).get("appointment_id", "")
+
+        sync_db.payment_transactions.update_one(
+            {"session_id": session_id, "payment_status": {"$ne": "paid"}},
+            {"$set": {"status": "completed", "payment_status": obj.get("payment_status", "paid"),
+                      "updated_at": datetime.now(timezone.utc)}}
+        )
+
+        if appt_id:
+            sync_db.appointments.update_one(
+                {"_id": ObjectId(appt_id)},
+                {"$set": {"status": "confirmed", "payment_status": "paid",
+                          "confirmed_at": datetime.now(timezone.utc).isoformat()}}
+            )
+            # Send confirmation email in background
+            appt = sync_db.appointments.find_one({"_id": ObjectId(appt_id)})
+            if appt:
+                _send_appointment_confirmation_email(appt)
+
+    elif event_type == "checkout.session.expired":
+        sync_db.payment_transactions.update_one(
+            {"session_id": obj["id"]},
+            {"$set": {"status": "expired", "payment_status": "expired",
+                      "updated_at": datetime.now(timezone.utc)}}
+        )
+        appt_id = obj.get("metadata", {}).get("appointment_id", "")
+        if appt_id:
+            sync_db.appointments.update_one(
+                {"_id": ObjectId(appt_id)},
+                {"$set": {"status": "expired"}}
+            )
+
+    return {"status": "ok"}
+
+
+def _send_appointment_confirmation_email(appt):
+    try:
+        settings = sync_db.settings.find_one({"type": "smtp"})
+        if not settings or not settings.get("smtp_host"):
+            logger.warning("SMTP not configured, skipping appointment confirmation email")
+            return
+
+        msg = MIMEMultipart()
+        msg["From"] = settings["from_email"]
+        msg["To"] = appt["email"]
+        msg["Subject"] = "Cita Confirmada - Tramilex"
+
+        office_name = appt.get("office", "")
+        office_detail = appt.get("office_detail", "")
+        date_str = appt.get("date", "")
+        time_str = appt.get("time", "")
+
+        body = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #0f172a;">Cita Confirmada</h2>
+            <p>Hola <strong>{appt.get('first_name', '')} {appt.get('last_name', '')}</strong>,</p>
+            <p>Tu cita ha sido confirmada exitosamente.</p>
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                <p style="margin: 4px 0;"><strong>Fecha:</strong> {date_str}</p>
+                <p style="margin: 4px 0;"><strong>Hora:</strong> {time_str}</p>
+                <p style="margin: 4px 0;"><strong>Duracion:</strong> 45 minutos</p>
+                <p style="margin: 4px 0;"><strong>Lugar:</strong> {office_name}, {office_detail}</p>
+            </div>
+            <p>Por favor, llega puntualmente y trae toda la documentacion necesaria.</p>
+            <p style="margin-top: 24px;">Un cordial saludo,<br><strong>El equipo de Tramilex</strong></p>
+        </div>
+        """
+        msg.attach(MIMEText(body, "html"))
+        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
+        server.starttls()
+        server.login(settings["smtp_user"], settings["smtp_password"])
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"Appointment confirmation email sent to {appt['email']}")
+    except Exception as e:
+        logger.error(f"Error enviando email de confirmacion de cita: {e}")
+
+
+@api_router.get("/citas")
+async def list_appointments(user=Depends(require_staff_or_admin)):
+    records = []
+    async for a in db.appointments.find().sort("created_at", -1):
+        records.append({
+            "id": str(a["_id"]),
+            "first_name": a.get("first_name", ""),
+            "last_name": a.get("last_name", ""),
+            "email": a.get("email", ""),
+            "phone": a.get("phone", ""),
+            "origin_country": a.get("origin_country", ""),
+            "residence_country": a.get("residence_country", ""),
+            "address": a.get("address", ""),
+            "document_id": a.get("document_id", ""),
+            "document_type": a.get("document_type", ""),
+            "location": a.get("location", ""),
+            "office": a.get("office", ""),
+            "office_detail": a.get("office_detail", ""),
+            "date": a.get("date", ""),
+            "time": a.get("time", ""),
+            "status": a.get("status", "pending_payment"),
+            "payment_status": a.get("payment_status", "pending"),
+            "created_at": a.get("created_at", ""),
+            "confirmed_at": a.get("confirmed_at", ""),
+        })
+    return records
+
+
+@api_router.get("/citas/unconfirmed-count")
+async def get_unconfirmed_count(user=Depends(require_staff_or_admin)):
+    count = await db.appointments.count_documents({"status": "confirmed", "admin_reviewed": {"$ne": True}})
+    return {"count": count}
+
+
+@api_router.put("/citas/{appt_id}/review")
+async def mark_appointment_reviewed(appt_id: str, user=Depends(require_staff_or_admin)):
+    await db.appointments.update_one(
+        {"_id": ObjectId(appt_id)},
+        {"$set": {"admin_reviewed": True}}
+    )
+    return {"message": "Cita marcada como revisada"}
+
+
+@api_router.delete("/citas/{appt_id}")
+async def delete_appointment(appt_id: str, user=Depends(require_admin)):
+    result = await db.appointments.delete_one({"_id": ObjectId(appt_id)})
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Cita no encontrada")
+    return {"message": "Cita eliminada"}
 # --- Chatbot (Gemini) ---
 ADMIN_SYSTEM_PROMPT = """Eres el asistente virtual de Tramilex, una plataforma de gestion documental para inmigracion. Respondes SOLO preguntas sobre la plataforma.
 
