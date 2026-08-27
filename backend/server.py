@@ -2742,6 +2742,108 @@ async def download_inbox_attachment(msg_id: str, attachment_id: str, user=Depend
     })
 
 
+# --- Forward inbox email to platform user ---
+class ForwardEmailInput(BaseModel):
+    msg_id: str
+    to_user_id: str
+    to_user_type: str = "client"
+    note: str = ""
+
+
+@api_router.post("/inbox/forward")
+async def forward_inbox_email(body: ForwardEmailInput, background_tasks: BackgroundTasks, user=Depends(require_staff_or_admin)):
+    import requests as req
+
+    token = get_ms_graph_token()
+    if not token:
+        raise HTTPException(status_code=500, detail="No se pudo conectar a Outlook")
+
+    ms_email = os.environ.get("MS_EMAIL", "")
+    headers = {"Authorization": f"Bearer {token}"}
+
+    # Get original email
+    url = f"https://graph.microsoft.com/v1.0/users/{ms_email}/messages/{body.msg_id}?$select=subject,from,body,receivedDateTime"
+    r = req.get(url, headers=headers)
+    if r.status_code != 200:
+        raise HTTPException(status_code=404, detail="Email no encontrado")
+    email_data = r.json()
+
+    # Find recipient
+    to_email = ""
+    to_name = ""
+    if body.to_user_type == "client":
+        u = await db.users.find_one({"_id": ObjectId(body.to_user_id)})
+        if u:
+            to_email = u.get("email", "")
+            to_name = u.get("name", "")
+    elif body.to_user_type == "staff":
+        u = await db.users.find_one({"_id": ObjectId(body.to_user_id), "role": {"$in": ["admin", "staff"]}})
+        if u:
+            to_email = u.get("email", "")
+            to_name = u.get("name", "")
+    elif body.to_user_type == "company":
+        c = await db.companies.find_one({"_id": ObjectId(body.to_user_id)})
+        if c:
+            to_email = c.get("email", "")
+            to_name = c.get("name", "")
+
+    if not to_email:
+        raise HTTPException(status_code=400, detail="Destinatario no encontrado o sin email")
+
+    subject = email_data.get("subject", "Sin asunto")
+    original_body = email_data.get("body", {}).get("content", "")
+    from_info = email_data.get("from", {}).get("emailAddress", {})
+
+    def do_forward():
+        try:
+            import pymongo
+            sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
+            sync_db = sync_client[os.environ['DB_NAME']]
+            settings = sync_db.settings.find_one({"type": "smtp"})
+            sync_client.close()
+            if not settings or not settings.get("smtp_host"):
+                return
+            msg = MIMEMultipart()
+            msg["From"] = settings["from_email"]
+            msg["To"] = to_email
+            msg["Subject"] = f"FW: {subject}"
+            note_html = f"<p style='background:#f0f9ff;padding:12px;border-radius:8px;color:#0369a1;'><strong>Nota de {user.get('name','')}:</strong> {body.note}</p><hr>" if body.note else ""
+            html = f"""
+            <div style="font-family: Arial, sans-serif;">
+                {note_html}
+                <p style="color:#64748b;font-size:12px;">--- Mensaje reenviado ---<br>
+                De: {from_info.get('name','')} &lt;{from_info.get('address','')}&gt;<br>
+                Asunto: {subject}</p>
+                {original_body}
+            </div>"""
+            msg.attach(MIMEText(html, "html"))
+            server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
+            server.starttls()
+            server.login(settings["smtp_user"], settings["smtp_password"])
+            server.send_message(msg)
+            server.quit()
+        except Exception as e:
+            logger.error(f"Error reenviando email: {e}")
+
+    background_tasks.add_task(do_forward)
+
+    await log_audit("email_forwarded", user["_id"], user.get("name", ""),
+                    {"subject": subject, "to": to_email, "to_name": to_name})
+    return {"message": f"Email reenviado a {to_name} ({to_email})"}
+
+
+@api_router.get("/inbox/forward-recipients")
+async def get_forward_recipients(user=Depends(require_staff_or_admin)):
+    recipients = []
+    async for u in db.users.find({"role": {"$in": ["client"]}, "email": {"$ne": ""}}).sort("name", 1):
+        recipients.append({"id": str(u["_id"]), "name": u.get("name", ""), "email": u.get("email", ""), "type": "client"})
+    async for u in db.users.find({"role": {"$in": ["admin", "staff"]}, "email": {"$ne": ""}}).sort("name", 1):
+        recipients.append({"id": str(u["_id"]), "name": u.get("name", ""), "email": u.get("email", ""), "type": "staff", "position": u.get("position", "")})
+    async for c in db.companies.find({"email": {"$ne": ""}}).sort("name", 1):
+        recipients.append({"id": str(c["_id"]), "name": c.get("name", ""), "email": c.get("email", ""), "type": "company", "cif_nif": c.get("cif_nif", "")})
+    return recipients
+
+
 # --- Chatbot (Gemini) ---
 ADMIN_SYSTEM_PROMPT = """Eres el asistente virtual de Tramilex, una plataforma de gestion documental para inmigracion. Respondes SOLO preguntas sobre la plataforma.
 

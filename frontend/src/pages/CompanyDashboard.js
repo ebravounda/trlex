@@ -17,7 +17,7 @@ import {
 
 import ChatBot from '@/components/ChatBot';
 
-const LOGO_URL = "https://tramilex.es/wp-content/uploads/2024/07/logo-tramilex-v3-1.jpg";
+const LOGO_URL = "https://customer-assets-lxgj4vgw.emergentagent.net/job_inmigra-docs/artifacts/8hv3nj18_tramilex_logo_1600x900.png";
 
 const CATEGORIES = [
   { value: "identificacion", label: "Identificacion" },
