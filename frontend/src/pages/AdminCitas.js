@@ -144,14 +144,14 @@ export default function AdminCitas() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 stagger-children">
         {[
           { label: 'Total citas', value: appointments.length, icon: Calendar, bgIcon: 'bg-slate-50', iconColor: 'text-slate-500' },
           { label: 'Confirmadas', value: confirmedCount, icon: CheckCircle2, bgIcon: 'bg-emerald-50', iconColor: 'text-emerald-500' },
           { label: 'Pago pendiente', value: pendingCount, icon: Clock, bgIcon: 'bg-amber-50', iconColor: 'text-amber-500' },
           { label: 'Hoy', value: appointments.filter(a => a.date === new Date().toISOString().split('T')[0] && a.status === 'confirmed').length, icon: Calendar, bgIcon: 'bg-blue-50', iconColor: 'text-blue-500' },
         ].map(st => (
-          <div key={st.label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between">
+          <div key={st.label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between hover-lift animate-fade-in-up">
             <div>
               <p className="text-2xl font-semibold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>{st.value}</p>
               <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 mt-0.5">{st.label}</p>
@@ -196,7 +196,7 @@ export default function AdminCitas() {
             const isExpanded = expandedId === a.id;
             return (
               <div key={a.id} data-testid={`appointment-${a.id}`}>
-                <div className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-slate-50/80" onClick={() => setExpandedId(isExpanded ? null : a.id)}>
+                <div className="flex items-center gap-3 px-5 py-4 cursor-pointer row-glow" onClick={() => setExpandedId(isExpanded ? null : a.id)}>
                   <div className={`w-2.5 h-2.5 rounded-full ${st.dot} shrink-0`} />
                   <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
                     <User className="w-4 h-4 text-slate-500" />

@@ -11,6 +11,9 @@ import {
   Plus, Search, DollarSign, TrendingUp, Clock, AlertTriangle, CheckCircle2,
   ChevronDown, ChevronUp, CreditCard, Trash2, Building2, User, Receipt
 } from 'lucide-react';
+import { PieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
+
+const CHART_COLORS = ['#f59e0b', '#3b82f6', '#10b981', '#ef4444'];
 
 const STATUS_MAP = {
   pendiente: { label: 'Pendiente', color: 'bg-amber-100 text-amber-800 border-amber-200', dot: 'bg-amber-500' },
@@ -114,14 +117,14 @@ export default function AdminContabilidad() {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-5 stagger-children">
         {[
           { label: 'Total facturado', value: fmt(summary.total_facturado), icon: Receipt, iconColor: 'text-slate-500', bgIcon: 'bg-slate-50' },
           { label: 'Total cobrado', value: fmt(summary.total_cobrado), icon: TrendingUp, iconColor: 'text-emerald-500', bgIcon: 'bg-emerald-50' },
           { label: 'Pendiente de cobro', value: fmt(summary.total_pendiente), icon: Clock, iconColor: 'text-amber-500', bgIcon: 'bg-amber-50' },
           { label: 'Vencidos', value: summary.count_overdue || 0, icon: AlertTriangle, iconColor: 'text-red-500', bgIcon: 'bg-red-50' },
         ].map(st => (
-          <div key={st.label} className="bg-white border border-slate-200 rounded-xl p-5 flex items-center justify-between">
+          <div key={st.label} className="bg-white border border-slate-200 rounded-xl p-5 flex items-center justify-between hover-lift animate-fade-in-up">
             <div>
               <p className="text-2xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>{st.value}</p>
               <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mt-1">{st.label}</p>
@@ -132,6 +135,52 @@ export default function AdminContabilidad() {
           </div>
         ))}
       </div>
+
+      {/* Charts */}
+      {records.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5 stagger-children">
+          <div className="bg-white border border-slate-200 rounded-xl p-5 animate-fade-in-up hover-lift">
+            <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-4">Estado de cobros</p>
+            <ResponsiveContainer width="100%" height={180}>
+              <PieChart>
+                <Pie data={[
+                  { name: 'Pendiente', value: summary.count_pending || 0 },
+                  { name: 'Parcial', value: summary.count_partial || 0 },
+                  { name: 'Pagado', value: summary.count_paid || 0 },
+                  { name: 'Vencido', value: summary.count_overdue || 0 },
+                ].filter(d => d.value > 0)} cx="50%" cy="50%" outerRadius={70} innerRadius={40} dataKey="value" paddingAngle={3}>
+                  {[0,1,2,3].map(i => <Cell key={i} fill={CHART_COLORS[i]} />)}
+                </Pie>
+                <Tooltip formatter={(v, name) => [v, name]} />
+              </PieChart>
+            </ResponsiveContainer>
+            <div className="flex justify-center gap-4 mt-2">
+              {[{l:'Pendiente',c:'bg-amber-500'},{l:'Parcial',c:'bg-blue-500'},{l:'Pagado',c:'bg-emerald-500'},{l:'Vencido',c:'bg-red-500'}].map(i => (
+                <span key={i.l} className="flex items-center gap-1.5 text-[10px] text-slate-500"><span className={`w-2 h-2 rounded-full ${i.c}`} />{i.l}</span>
+              ))}
+            </div>
+          </div>
+          <div className="bg-white border border-slate-200 rounded-xl p-5 animate-fade-in-up hover-lift">
+            <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-4">Facturacion vs Cobrado</p>
+            <ResponsiveContainer width="100%" height={200}>
+              <BarChart data={[
+                { name: 'Facturado', valor: summary.total_facturado || 0 },
+                { name: 'Cobrado', valor: summary.total_cobrado || 0 },
+                { name: 'Pendiente', valor: summary.total_pendiente || 0 },
+              ]} barSize={40}>
+                <XAxis dataKey="name" tick={{ fontSize: 11, fill: '#64748b' }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: '#94a3b8' }} axisLine={false} tickLine={false} />
+                <Tooltip formatter={(v) => [`${Number(v).toLocaleString('es-ES', {style:'currency',currency:'EUR'})}`, 'Monto']} />
+                <Bar dataKey="valor" radius={[6,6,0,0]}>
+                  <Cell fill="#0f172a" />
+                  <Cell fill="#10b981" />
+                  <Cell fill="#f59e0b" />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3">
@@ -162,7 +211,7 @@ export default function AdminContabilidad() {
             const isExpanded = expandedRecord === r.id;
             return (
               <div key={r.id}>
-                <div className="flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-50/80" onClick={() => toggleExpand(r.id)}>
+                <div className="flex items-center gap-4 px-5 py-4 cursor-pointer row-glow" onClick={() => toggleExpand(r.id)}>
                   <div className={`w-2.5 h-2.5 rounded-full ${st.dot} shrink-0`} />
                   <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center shrink-0">
                     {r.client_type === 'company' ? <Building2 className="w-4 h-4 text-slate-500" /> : <User className="w-4 h-4 text-slate-500" />}

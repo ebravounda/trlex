@@ -116,13 +116,13 @@ export default function AdminPresupuestos() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 stagger-children">
         {[
           { label: 'Total emitidos', value: records.length, icon: FileText, bg: 'bg-slate-50', ic: 'text-slate-500' },
           { label: 'Valor total', value: fmt(records.reduce((s, r) => s + r.total, 0)), icon: Receipt, bg: 'bg-emerald-50', ic: 'text-emerald-500' },
           { label: 'Ultimo N.', value: records[0]?.number || '-', icon: Hash, bg: 'bg-blue-50', ic: 'text-blue-500' },
         ].map(st => (
-          <div key={st.label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between">
+          <div key={st.label} className="bg-white border border-slate-200 rounded-xl p-4 flex items-center justify-between hover-lift animate-fade-in-up">
             <div>
               <p className="text-2xl font-semibold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>{st.value}</p>
               <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-500 mt-0.5">{st.label}</p>
@@ -152,7 +152,7 @@ export default function AdminPresupuestos() {
             const isExp = expandedId === r.id;
             return (
               <div key={r.id} data-testid={`presupuesto-${r.number}`}>
-                <div className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-slate-50/80" onClick={() => toggleExpand(r.id)}>
+                <div className="flex items-center gap-3 px-5 py-4 cursor-pointer row-glow" onClick={() => toggleExpand(r.id)}>
                   <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
                     <Hash className="w-4 h-4 text-slate-500" />
                   </div>

@@ -1,4 +1,4 @@
-import { Outlet, NavLink, useNavigate } from 'react-router-dom';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
 import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog, Inbox, DollarSign, CalendarCheck, FileSpreadsheet } from 'lucide-react';
@@ -74,10 +74,10 @@ function SidebarContent({ onClose, inboxUnread, citasCount }) {
             <Icon className="w-4 h-4" strokeWidth={1.5} />
             {label}
             {to === '/admin/inbox' && inboxUnread > 0 && (
-              <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">{inboxUnread > 9 ? '9+' : inboxUnread}</span>
+              <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse-badge">{inboxUnread > 9 ? '9+' : inboxUnread}</span>
             )}
             {to === '/admin/citas' && citasCount > 0 && (
-              <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center" data-testid="citas-badge">{citasCount > 9 ? '9+' : citasCount}</span>
+              <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse-badge" data-testid="citas-badge">{citasCount > 9 ? '9+' : citasCount}</span>
             )}
           </NavLink>
         ))}
@@ -108,6 +108,7 @@ export default function AdminLayout() {
   const [showForcePw, setShowForcePw] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const { user } = useAuth();
+  const location = useLocation();
 
   const checkInbox = useCallback(async () => {
     try {
@@ -196,7 +197,9 @@ export default function AdminLayout() {
 
         {/* Page content */}
         <main className="p-6 md:p-8">
-          <Outlet />
+          <div key={location.pathname} className="page-enter">
+            <Outlet />
+          </div>
         </main>
       </div>
       <ChatBot context="admin" />

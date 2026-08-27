@@ -112,8 +112,8 @@ export default function AdminClients() {
           : clients;
         return (
           <>
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-        <div className="bg-white border border-slate-200 rounded-lg p-5 flex items-center gap-4 shadow-sm">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 stagger-children">
+        <div className="bg-white border border-slate-200 rounded-lg p-5 flex items-center gap-4 shadow-sm hover-lift animate-fade-in-up">
           <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
             <Users className="w-5 h-5 text-slate-600" strokeWidth={1.5} />
           </div>
@@ -122,7 +122,7 @@ export default function AdminClients() {
             <p className="text-xs text-slate-500 uppercase tracking-wider font-medium">Clientes registrados</p>
           </div>
         </div>
-        <div className="bg-white border border-slate-200 rounded-lg p-5 flex items-center gap-4 shadow-sm">
+        <div className="bg-white border border-slate-200 rounded-lg p-5 flex items-center gap-4 shadow-sm hover-lift animate-fade-in-up">
           <div className="w-10 h-10 rounded-full bg-slate-100 flex items-center justify-center">
             <FileText className="w-5 h-5 text-slate-600" strokeWidth={1.5} />
           </div>
@@ -164,7 +164,7 @@ export default function AdminClients() {
               {displayClients.map((client) => (
                 <TableRow
                   key={client.id}
-                  className="hover:bg-slate-50 transition-colors cursor-pointer group"
+                  className="row-glow cursor-pointer group"
                   onClick={() => navigate(`/admin/clients/${client.id}`)}
                   data-testid={`client-row-${client.id}`}
                 >
