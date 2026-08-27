@@ -1,163 +1,102 @@
 {
-  "project_context": {
-    "app_type": "dashboard",
-    "domain": "legal_immigration",
-    "theme": "light",
-    "archetype": "4_swiss_high_contrast",
-    "emotional_tone": "Professional, Trustworthy, Secure, Clear, Minimalist",
-    "key_functionalities": [
-      "Client registration with NIE/Passport",
-      "Document upload (PDF/Images) retaining original names",
-      "Lawyer Admin panel to view/manage clients and documents",
-      "Document status management (Pendiente de revisión -> Revisado)",
-      "Document download and deletion",
-      "Upload date/time tracking",
-      "SMTP configuration for admin email notifications",
-      "Filters: Origin country, NIE, Passport",
-      "Comprehensive client profile view"
+  "project_name": "Tramilex - Admin Tasks Module",
+  "app_type": "dashboard",
+  "emotional_archetype": "ARCHETYPE 4: SWISS & HIGH-CONTRAST (Authority, Clarity, Trust)",
+  "vibe": "Professional, sterile, trustworthy, and actionable. Perfect for legal and case management platforms.",
+  "typography": {
+    "fonts": {
+      "headings": "Manrope",
+      "body": "Inter",
+      "mono": "IBM Plex Mono"
+    },
+    "hierarchy": {
+      "h1": "text-3xl sm:text-4xl font-semibold tracking-tight text-slate-900",
+      "h2": "text-xl sm:text-2xl font-semibold tracking-tight text-slate-900",
+      "h3": "text-lg font-medium tracking-tight text-slate-900",
+      "body": "text-sm text-slate-600 leading-relaxed",
+      "labels": "text-xs font-bold uppercase tracking-[0.15em] text-slate-500"
+    },
+    "rules": [
+      "No generic sans (Inter/Roboto) for headings. Use Manrope for a crisp, authoritative look.",
+      "Use tight letter spacing (tracking-tight) for large text (>= 24px).",
+      "Overlines and table headers MUST be uppercase, tiny (text-xs), and widely spaced (tracking-[0.15em])."
     ]
   },
-  "design_system": {
-    "colors": {
-      "background": {
-        "primary": "#F8FAFC",
-        "secondary": "#FFFFFF",
-        "glass": "bg-white/70"
-      },
-      "surface": {
-        "card": "#FFFFFF",
-        "hover": "#F1F5F9",
-        "border": "#E2E8F0"
-      },
-      "text": {
-        "primary": "#0F172A",
-        "secondary": "#475569",
-        "tertiary": "#64748B",
-        "inverse": "#FFFFFF"
-      },
-      "brand": {
-        "primary": "#0F172A",
-        "primary_hover": "#1E293B",
-        "accent": "#0284C7"
-      },
-      "status": {
-        "pending": {
-          "bg": "#FEF3C7",
-          "text": "#B45309",
-          "border": "#FDE68A"
-        },
-        "reviewed": {
-          "bg": "#D1FAE5",
-          "text": "#047857",
-          "border": "#A7F3D0"
-        },
-        "destructive": {
-          "bg": "#FEE2E2",
-          "text": "#B91C1C",
-          "hover": "#FECACA"
-        }
-      }
+  "colors": {
+    "palette": {
+      "background": "bg-slate-50",
+      "surface": "bg-white",
+      "border": "border-slate-200",
+      "primary": "bg-slate-900 hover:bg-slate-800 text-white",
+      "text_main": "text-slate-900",
+      "text_muted": "text-slate-500"
     },
-    "typography": {
-      "font_families": {
-        "heading": "Manrope, sans-serif",
-        "body": "IBM Plex Sans, sans-serif",
-        "mono": "JetBrains Mono, monospace"
-      },
-      "hierarchy": {
-        "h1": "text-4xl sm:text-5xl font-extrabold tracking-tight text-slate-900",
-        "h2": "text-2xl sm:text-3xl font-bold tracking-tight text-slate-900",
-        "h3": "text-xl sm:text-2xl font-semibold tracking-tight text-slate-800",
-        "h4": "text-lg sm:text-xl font-medium tracking-tight text-slate-800",
-        "body": "text-base text-slate-600 leading-relaxed",
-        "small": "text-sm text-slate-500",
-        "overline": "text-xs font-bold uppercase tracking-[0.2em] text-slate-500"
-      }
+    "status": {
+      "pending": { "bg": "bg-amber-100", "text": "text-amber-800", "border": "border-amber-200", "dot": "bg-amber-500" },
+      "in_process": { "bg": "bg-blue-100", "text": "text-blue-800", "border": "border-blue-200", "dot": "bg-blue-500" },
+      "completed": { "bg": "bg-emerald-100", "text": "text-emerald-800", "border": "border-emerald-200", "dot": "bg-emerald-500" }
     },
-    "spacing_and_layout": {
-      "generous_spacing": true,
-      "container_padding": "p-6 md:p-8 lg:p-12",
-      "gap": "gap-6 md:gap-8",
-      "radius": "rounded-lg",
-      "shadows": {
-        "ambient": "shadow-sm",
-        "card": "shadow-[0_2px_10px_-3px_rgba(6,81,237,0.05)]",
-        "glass": "shadow-[0_8px_32px_rgba(0,0,0,0.04)]"
-      },
-      "grid_patterns": {
-        "dashboard": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-6",
-        "forms": "grid grid-cols-1 md:grid-cols-2 gap-6"
-      }
+    "priority": {
+      "high": { "border": "border-red-500", "text": "text-red-700", "bg": "bg-red-50" },
+      "medium": { "border": "border-amber-500", "text": "text-amber-700", "bg": "bg-amber-50" },
+      "low": { "border": "border-slate-400", "text": "text-slate-700", "bg": "bg-slate-50" }
     },
-    "surfaces": {
-      "cards": "bg-white border border-slate-200 rounded-lg shadow-sm transition-all duration-200 hover:shadow-md",
-      "header": "sticky top-0 z-50 bg-white/80 backdrop-blur-xl border-b border-slate-200",
-      "sidebar": "bg-slate-50 border-r border-slate-200",
-      "inputs": "bg-white border border-slate-300 rounded-md focus:ring-2 focus:ring-slate-900 focus:border-slate-900 transition-colors"
-    },
-    "animations": {
-      "hover": "transition-all duration-200 ease-in-out",
-      "dialog_enter": "animate-in fade-in zoom-in-95 duration-200",
-      "list_stagger": "animate-in slide-in-from-bottom-2 fade-in duration-300"
-    }
+    "rules": [
+      "Tinted Neutral Greys: Rely on 'slate' rather than pure grey for a professional legal tone.",
+      "Avoid pastel backgrounds for main surfaces; use crisp white to ensure maximum readability of data.",
+      "Never use full-screen gradients in dashboards. Keep it flat, clean, and cardless where possible."
+    ]
   },
-  "components_instructions": {
-    "shadcn_customizations": {
-      "Button": "Use solid slate-900 for primary actions. Remove rounded-full, use rounded-md. Ensure text contrast is perfect.",
-      "Table": "Dense padding (py-2 px-4). Use IBM Plex Sans for tabular data to ensure numbers (NIE/Passport) align perfectly.",
-      "Card": "Use flat design with 1px border-slate-200. Minimal shadow.",
-      "Badge": "Use soft backgrounds with dark text for statuses (e.g., Amber for Pendiente, Emerald for Revisado).",
-      "Input/Select": "Height h-10, rounded-md, crisp borders.",
-      "Dialog": "Backdrop blur is mandatory (backdrop-blur-sm bg-slate-900/20)."
-    },
-    "icons": {
-      "library": "lucide-react",
-      "style": "Stroke width 1.5, standard sizing (w-4 h-4 for inline, w-5 h-5 for sidebar)."
-    },
-    "forms": {
-      "layout": "Left-align all labels. Use grid for complex forms (e.g., origin country + residence country on same row).",
-      "required_fields": "Clearly mark required fields. Add helper text for NIE/Passport formats if possible."
-    }
+  "layouts": {
+    "page_structure": [
+      "Header Area: Contains the H1 ('Task Management' or 'Tareas'), global actions (Create Task Button).",
+      "Stats Grid: grid-cols-1 md:grid-cols-3 gap-6 mb-8. Flat solid cards with 1px border.",
+      "Filter Bar: Sticky horizontal bar or distinct section containing Shadcn Tabs (All, Mine, Created) and Select dropdowns (Status, Priority).",
+      "Task List: A dense, professional list-view (cardless table hybrid). Every row is a distinct item with a subtle 1px bottom border."
+    ],
+    "spacing": [
+      "Use generous internal padding for sections (e.g., p-6 or p-8 inside metric cards).",
+      "Ensure space between distinct dashboard modules (gap-8 or mb-8)."
+    ]
   },
-  "media": {
-    "image_urls": {
-      "login_background": {
-        "url": "https://images.unsplash.com/photo-1567030561392-0e0691af044b?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA4Mzl8MHwxfHNlYXJjaHwyfHxtb2Rlcm4lMjBjb3Jwb3JhdGUlMjBvZmZpY2UlMjBidWlsZGluZyUyMG1pbmltYWwlMjBsaWdodHxlbnwwfHx8fDE3NzU5Mjg0NzB8MA&ixlib=rb-4.1.0&q=85",
-        "description": "Modern minimalist corporate building, bright and clean. Used for the right side of the split auth screen.",
-        "usage": "Auth page split screen background"
-      },
-      "logo_placeholder": {
-        "url": "https://images.unsplash.com/photo-1768839722927-df0ef3188f6d?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzd8MHwxfHNlYXJjaHwxfHxzY2FsZXMlMjBvZiUyMGp1c3RpY2UlMjBhYnN0cmFjdCUyMHN5bWJvbHxlbnwwfHx8fDE3NzU5Mjg0NzZ8MA&ixlib=rb-4.1.0&q=85",
-        "description": "Scales of justice abstract symbol",
-        "usage": "Sidebar logo area or login screen brand icon"
-      }
-    }
-  },
-  "application_flow": {
-    "auth": {
-      "layout": "Split screen layout (50/50). Form on the left with generous padding, login_background image on the right with object-cover.",
-      "roles": "Client Login/Register, Admin Login."
+  "components": {
+    "stats_cards": {
+      "style": "Neumorphic/Flat Hybrid. bg-white, 1px border-slate-200, no drop shadow. Rounded-xl.",
+      "content": "Large metric number (text-4xl Manrope tracking-tight), small uppercase label, subtle icon in the top right corner."
     },
-    "client_portal": {
-      "dashboard": "Welcome header. Large 'Upload Document' drag-and-drop zone. Table below showing uploaded documents, original file name, upload date/time, and status badge."
+    "task_list": {
+      "style": "Flat, cardless list. Each row has a hover effect (hover:bg-slate-50/80 transition-colors duration-200).",
+      "priority_indicator": "A 4px vertical border on the left edge of the task row (e.g., border-l-4 border-red-500 for High).",
+      "expansion": "Clicking a row expands it down smoothly (using Shadcn Accordion pattern or Framer Motion). The expanded area should have a slightly different background (bg-slate-50) and an inset inner shadow or top/bottom borders to differentiate it from the main row list."
     },
-    "admin_portal": {
-      "layout": "Standard Dashboard layout with sticky left Sidebar and top Header.",
-      "sidebar_links": "Clients, Settings (SMTP).",
-      "clients_view": {
-        "filters": "Top bar with search input for NIE/Passport, and dropdown for Country of Origin.",
-        "table": "List of clients showing Name, NIE/Passport, Email, Origin. Clicking a row opens Client Detail view."
-      },
-      "client_detail_view": {
-        "header": "Client identity card (all personal info: email, phone, address, city, origin, residence).",
-        "documents_section": "Table of uploaded documents. Actions column: Download (icon), Change Status Dropdown, Delete (icon, red hover)."
-      },
-      "settings_view": {
-        "smtp_form": "Form for lawyer to configure SMTP host, port, user, password, from_email for notifications."
-      }
-    }
+    "filters": {
+      "tabs": "Use Shadcn Tabs for switching views ('All', 'Mine', 'Created by me'). Style the active tab with a crisp underline or solid slate-900 background for high contrast.",
+      "dropdowns": "Use Shadcn Select for filtering Status. Ensure they don't have transparent backgrounds."
+    },
+    "dialogs": {
+      "create_task": "Shadcn Dialog. Use Glassmorphism for the backdrop (backdrop-blur-sm bg-slate-900/40) to keep focus on the modal. The modal itself must be solid bg-white with sharp or slightly rounded corners (rounded-xl)."
+    },
+    "status_dropdown": "A small embedded Shadcn Select or DropdownMenu inside the task row to quickly change status without opening the full details.",
+    "comments_thread": "Inside the expanded view. Display as a vertical timeline. Use a left border line (border-l-2 border-slate-200) to connect comments visually."
   },
-  "testing": {
-    "attributes": "All interactive elements MUST include data-testid. e.g., data-testid='upload-doc-button', data-testid='filter-country-select', data-testid='status-badge-pending'."
-  }
+  "visual_enhancers": {
+    "icons": "Use @phosphor-icons/react. They provide a precise, geometric look ideal for legal and dashboard applications. Install: `yarn add @phosphor-icons/react` or `npm install @phosphor-icons/react`",
+    "motion": "Keep animations minimalist and snappy. 0.2s transitions for hover states. Accordion expansion should take 0.3s ease-out.",
+    "empty_states": "If no tasks match a filter, display a structured empty state: Phosphor Icon (e.g., FileDashed), muted text, and a 'Clear Filters' button."
+  },
+  "accessibility": {
+    "contrast": "Ensure all text meets minimum 4.5:1 ratio. Text on slate-900 must be pure white.",
+    "focus": "All inputs and buttons must have a clear focus ring (focus:ring-2 focus:ring-slate-900 focus:ring-offset-2).",
+    "testing": "All interactive elements (buttons, filter tabs, rows, status dropdowns, submit buttons) MUST include a `data-testid` attribute (e.g., `data-testid='filter-tab-mine'`, `data-testid='task-row-expand'`)."
+  },
+  "UNIVERSAL_GUIDELINES_FOR_MAIN_AGENT": [
+    "Do NOT use HTML-based components for complex interactions. Rely on Shadcn UI (Tabs, Select, Dialog, DropdownMenu).",
+    "Avoid the 'AI slop' aesthetic: no generic centered layouts for the main dashboard content. Use left-aligned grids.",
+    "Never apply `transition: all`. Target specific properties (e.g., `transition-colors`, `transition-transform`).",
+    "For the Task List, avoid a basic HTML <table> if possible. Use a CSS Grid layout for rows (`grid grid-cols-12 gap-4 items-center`) to allow complex internal structures like the expandable comment section.",
+    "Use Phosphor icons. Do NOT use emojis as icons.",
+    "Ensure 'Tramilex' brand feels robust. Sharp lines, clear typography, and logical groupings of data.",
+    "Add toast notifications (using sonner) for actions like 'Task Created', 'Status Updated', or 'Comment Added'.",
+    "Since the target files are .js (AdminTareas.js), ensure React components are written in JS/JSX with PropTypes or jsdoc if needed, instead of TS interfaces."
+  ]
 }
