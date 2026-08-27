@@ -1,17 +1,20 @@
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
-import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2 } from 'lucide-react';
+import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState } from 'react';
 
 import ChatBot from '@/components/ChatBot';
+import NotificationBell from '@/components/NotificationBell';
 
 const LOGO_URL = "https://tramilex.es/wp-content/uploads/2024/07/logo-tramilex-v3-1.jpg";
 
 const navItems = [
   { to: '/admin/clients', label: 'Clientes', icon: Users },
   { to: '/admin/empresas', label: 'Empresas', icon: Building2 },
+  { to: '/admin/tareas', label: 'Tareas', icon: ListTodo },
   { to: '/admin/tramites', label: 'Tramites', icon: FileText },
+  { to: '/admin/equipo', label: 'Equipo', icon: UserCog },
   { to: '/admin/email', label: 'Enviar correo', icon: Mail },
   { to: '/admin/audit', label: 'Auditoria', icon: ClipboardList },
   { to: '/admin/settings', label: 'Configuracion', icon: Settings },
@@ -115,7 +118,8 @@ export default function AdminLayout() {
               Panel de Administracion
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <NotificationBell />
             <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center">
               <span className="text-xs text-white font-semibold">
                 {(user?.name || 'A').charAt(0).toUpperCase()}

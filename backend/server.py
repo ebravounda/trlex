@@ -148,6 +148,13 @@ async def require_company(request: Request):
     return user
 
 
+async def require_staff_or_admin(request: Request):
+    user = await get_current_user(request)
+    if user.get("role") not in ["admin", "staff"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    return user
+
+
 # --- Document Categories ---
 DOCUMENT_CATEGORIES = [
     "identificacion", "residencia", "trabajo",
@@ -279,6 +286,44 @@ class CompanySendCredentialsInput(BaseModel):
 def generate_company_password(length=10):
     chars = string.digits + string.ascii_letters
     return ''.join(random.choices(chars, k=length))
+
+
+class StaffCreateInput(BaseModel):
+    name: str
+    email: str
+    password: str
+    phone: str = ""
+    position: str = ""
+
+
+class StaffUpdateInput(BaseModel):
+    name: str = ""
+    phone: str = ""
+    position: str = ""
+
+
+class TaskCreateInput(BaseModel):
+    title: str
+    description: str = ""
+    priority: str = "media"
+    assigned_to: str
+    due_date: str = ""
+    related_client_id: str = ""
+    related_company_id: str = ""
+    related_tramite: str = ""
+
+
+class TaskUpdateInput(BaseModel):
+    title: str = ""
+    description: str = ""
+    priority: str = ""
+    status: str = ""
+    assigned_to: str = ""
+    due_date: str = ""
+
+
+class TaskCommentInput(BaseModel):
+    text: str
 
 
 # --- Auth Routes ---
@@ -2216,6 +2261,311 @@ async def get_all_signed_documents(user=Depends(require_admin)):
             "company_id": d.get("company_id", "")
         })
     return docs
+
+
+# ============================
+# --- Staff Management (Admin only) ---
+# ============================
+
+@api_router.post("/staff")
+async def create_staff(body: StaffCreateInput, user=Depends(require_admin)):
+    email = body.email.lower().strip()
+    if not email or not body.password or not body.name.strip():
+        raise HTTPException(status_code=400, detail="Nombre, email y contrasena son obligatorios")
+
+    existing = await db.users.find_one({"email": email})
+    if existing:
+        raise HTTPException(status_code=400, detail="El email ya esta registrado")
+
+    user_doc = {
+        "email": email,
+        "password_hash": hash_password(body.password),
+        "name": body.name.strip(),
+        "phone": body.phone.strip(),
+        "position": body.position.strip(),
+        "role": "staff",
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.users.insert_one(user_doc)
+
+    await log_audit("staff_created", user["_id"], user.get("name", ""),
+                    {"staff_id": str(result.inserted_id), "staff_name": body.name, "email": email})
+    return {"id": str(result.inserted_id), "email": email, "name": body.name.strip(), "message": "Usuario creado"}
+
+
+@api_router.get("/staff")
+async def list_staff(user=Depends(require_staff_or_admin)):
+    staff = []
+    async for u in db.users.find({"role": "staff"}).sort("created_at", -1):
+        staff.append({
+            "id": str(u["_id"]),
+            "name": u.get("name", ""),
+            "email": u.get("email", ""),
+            "phone": u.get("phone", ""),
+            "position": u.get("position", ""),
+            "created_at": u.get("created_at", "")
+        })
+    # Include admins too
+    async for u in db.users.find({"role": "admin", "is_hidden": {"$ne": True}}).sort("created_at", -1):
+        staff.append({
+            "id": str(u["_id"]),
+            "name": u.get("name", ""),
+            "email": u.get("email", ""),
+            "phone": u.get("phone", ""),
+            "position": "Administrador",
+            "created_at": u.get("created_at", "")
+        })
+    return staff
+
+
+@api_router.delete("/staff/{staff_id}")
+async def delete_staff(staff_id: str, user=Depends(require_admin)):
+    try:
+        result = await db.users.delete_one({"_id": ObjectId(staff_id), "role": "staff"})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    await log_audit("staff_deleted", user["_id"], user.get("name", ""), {"staff_id": staff_id})
+    return {"message": "Usuario eliminado"}
+
+
+# ============================
+# --- Tasks System ---
+# ============================
+
+@api_router.post("/tasks")
+async def create_task(body: TaskCreateInput, user=Depends(require_staff_or_admin)):
+    if not body.title.strip():
+        raise HTTPException(status_code=400, detail="El titulo es obligatorio")
+    if body.priority not in ["baja", "media", "alta"]:
+        raise HTTPException(status_code=400, detail="Prioridad invalida")
+
+    # Verify assigned user exists
+    try:
+        assigned = await db.users.find_one({"_id": ObjectId(body.assigned_to), "role": {"$in": ["admin", "staff"]}})
+    except Exception:
+        raise HTTPException(status_code=400, detail="Usuario asignado no encontrado")
+    if not assigned:
+        raise HTTPException(status_code=400, detail="Usuario asignado no encontrado")
+
+    task_doc = {
+        "title": body.title.strip(),
+        "description": body.description.strip(),
+        "priority": body.priority,
+        "status": "pendiente",
+        "created_by": user["_id"],
+        "created_by_name": user.get("name", ""),
+        "assigned_to": body.assigned_to,
+        "assigned_to_name": assigned.get("name", ""),
+        "due_date": body.due_date,
+        "related_client_id": body.related_client_id,
+        "related_company_id": body.related_company_id,
+        "related_tramite": body.related_tramite,
+        "comments": [],
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    result = await db.tasks.insert_one(task_doc)
+    task_id = str(result.inserted_id)
+
+    # Create notification for assigned user
+    await db.notifications.insert_one({
+        "user_id": body.assigned_to,
+        "type": "task_assigned",
+        "title": "Te han asignado una tarea",
+        "message": f"{user.get('name', 'Alguien')} te ha asignado: {body.title.strip()}",
+        "task_id": task_id,
+        "read": False,
+        "created_at": datetime.now(timezone.utc).isoformat()
+    })
+
+    await log_audit("task_created", user["_id"], user.get("name", ""),
+                    {"task_id": task_id, "title": body.title, "assigned_to": assigned.get("name", "")})
+    return {"id": task_id, "message": "Tarea creada"}
+
+
+@api_router.get("/tasks")
+async def list_tasks(user=Depends(require_staff_or_admin)):
+    tasks = []
+    async for t in db.tasks.find().sort("created_at", -1):
+        tasks.append({
+            "id": str(t["_id"]),
+            "title": t.get("title", ""),
+            "description": t.get("description", ""),
+            "priority": t.get("priority", "media"),
+            "status": t.get("status", "pendiente"),
+            "created_by": t.get("created_by", ""),
+            "created_by_name": t.get("created_by_name", ""),
+            "assigned_to": t.get("assigned_to", ""),
+            "assigned_to_name": t.get("assigned_to_name", ""),
+            "due_date": t.get("due_date", ""),
+            "related_tramite": t.get("related_tramite", ""),
+            "comments_count": len(t.get("comments", [])),
+            "created_at": t.get("created_at", "")
+        })
+    return tasks
+
+
+@api_router.get("/tasks/{task_id}")
+async def get_task(task_id: str, user=Depends(require_staff_or_admin)):
+    try:
+        t = await db.tasks.find_one({"_id": ObjectId(task_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    if not t:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+
+    return {
+        "id": str(t["_id"]),
+        "title": t.get("title", ""),
+        "description": t.get("description", ""),
+        "priority": t.get("priority", "media"),
+        "status": t.get("status", "pendiente"),
+        "created_by": t.get("created_by", ""),
+        "created_by_name": t.get("created_by_name", ""),
+        "assigned_to": t.get("assigned_to", ""),
+        "assigned_to_name": t.get("assigned_to_name", ""),
+        "due_date": t.get("due_date", ""),
+        "related_client_id": t.get("related_client_id", ""),
+        "related_company_id": t.get("related_company_id", ""),
+        "related_tramite": t.get("related_tramite", ""),
+        "comments": t.get("comments", []),
+        "created_at": t.get("created_at", "")
+    }
+
+
+@api_router.put("/tasks/{task_id}")
+async def update_task(task_id: str, body: TaskUpdateInput, user=Depends(require_staff_or_admin)):
+    update_fields = {}
+    if body.title: update_fields["title"] = body.title.strip()
+    if body.description is not None: update_fields["description"] = body.description.strip()
+    if body.priority and body.priority in ["baja", "media", "alta"]: update_fields["priority"] = body.priority
+    if body.status and body.status in ["pendiente", "en_proceso", "completada"]: update_fields["status"] = body.status
+    if body.due_date is not None: update_fields["due_date"] = body.due_date
+    if body.assigned_to:
+        assigned = await db.users.find_one({"_id": ObjectId(body.assigned_to)})
+        if assigned:
+            update_fields["assigned_to"] = body.assigned_to
+            update_fields["assigned_to_name"] = assigned.get("name", "")
+            # Notify new assignee
+            if body.assigned_to != user["_id"]:
+                task = await db.tasks.find_one({"_id": ObjectId(task_id)})
+                await db.notifications.insert_one({
+                    "user_id": body.assigned_to,
+                    "type": "task_reassigned",
+                    "title": "Te han reasignado una tarea",
+                    "message": f"{user.get('name', 'Alguien')} te ha asignado: {task.get('title', '')}",
+                    "task_id": task_id,
+                    "read": False,
+                    "created_at": datetime.now(timezone.utc).isoformat()
+                })
+
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No hay campos para actualizar")
+
+    try:
+        result = await db.tasks.update_one({"_id": ObjectId(task_id)}, {"$set": update_fields})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    return {"message": "Tarea actualizada"}
+
+
+@api_router.post("/tasks/{task_id}/comments")
+async def add_task_comment(task_id: str, body: TaskCommentInput, user=Depends(require_staff_or_admin)):
+    if not body.text.strip():
+        raise HTTPException(status_code=400, detail="El comentario no puede estar vacio")
+
+    comment = {
+        "id": uuid.uuid4().hex[:8],
+        "user_id": user["_id"],
+        "user_name": user.get("name", ""),
+        "text": body.text.strip(),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+
+    try:
+        task = await db.tasks.find_one({"_id": ObjectId(task_id)})
+        if not task:
+            raise HTTPException(status_code=404, detail="Tarea no encontrada")
+        result = await db.tasks.update_one(
+            {"_id": ObjectId(task_id)},
+            {"$push": {"comments": comment}}
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+
+    # Notify task assignee and creator
+    notify_ids = set([task.get("assigned_to", ""), task.get("created_by", "")]) - {user["_id"]}
+    for uid in notify_ids:
+        if uid:
+            await db.notifications.insert_one({
+                "user_id": uid,
+                "type": "task_comment",
+                "title": "Nuevo comentario en tarea",
+                "message": f"{user.get('name', 'Alguien')} comento en: {task.get('title', '')}",
+                "task_id": task_id,
+                "read": False,
+                "created_at": datetime.now(timezone.utc).isoformat()
+            })
+
+    return {"message": "Comentario agregado", "comment": comment}
+
+
+@api_router.delete("/tasks/{task_id}")
+async def delete_task(task_id: str, user=Depends(require_staff_or_admin)):
+    try:
+        result = await db.tasks.delete_one({"_id": ObjectId(task_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    return {"message": "Tarea eliminada"}
+
+
+# ============================
+# --- Notifications ---
+# ============================
+
+@api_router.get("/notifications")
+async def get_notifications(user=Depends(require_staff_or_admin)):
+    notifs = []
+    async for n in db.notifications.find({"user_id": user["_id"]}).sort("created_at", -1).limit(50):
+        notifs.append({
+            "id": str(n["_id"]),
+            "type": n.get("type", ""),
+            "title": n.get("title", ""),
+            "message": n.get("message", ""),
+            "task_id": n.get("task_id", ""),
+            "read": n.get("read", False),
+            "created_at": n.get("created_at", "")
+        })
+    return notifs
+
+
+@api_router.get("/notifications/unread-count")
+async def unread_notification_count(user=Depends(require_staff_or_admin)):
+    count = await db.notifications.count_documents({"user_id": user["_id"], "read": False})
+    return {"count": count}
+
+
+@api_router.put("/notifications/{notif_id}/read")
+async def mark_notification_read(notif_id: str, user=Depends(require_staff_or_admin)):
+    await db.notifications.update_one(
+        {"_id": ObjectId(notif_id), "user_id": user["_id"]},
+        {"$set": {"read": True}}
+    )
+    return {"message": "Notificacion marcada como leida"}
+
+
+@api_router.put("/notifications/read-all")
+async def mark_all_notifications_read(user=Depends(require_staff_or_admin)):
+    await db.notifications.update_many(
+        {"user_id": user["_id"], "read": False},
+        {"$set": {"read": True}}
+    )
+    return {"message": "Todas las notificaciones marcadas como leidas"}
 
 
 # --- Chatbot (Gemini) ---

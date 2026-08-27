@@ -12,6 +12,8 @@ import AdminTramites from '@/pages/AdminTramites';
 import AdminEmail from '@/pages/AdminEmail';
 import AdminEmpresas from '@/pages/AdminEmpresas';
 import AdminEmpresaDetail from '@/pages/AdminEmpresaDetail';
+import AdminTareas from '@/pages/AdminTareas';
+import AdminStaff from '@/pages/AdminStaff';
 import CompanyDashboard from '@/pages/CompanyDashboard';
 import AdminLayout from '@/components/AdminLayout';
 import { Toaster } from 'sonner';
@@ -33,7 +35,7 @@ function AppRoutes() {
         path="/"
         element={
           user
-            ? <Navigate to={user.role === 'admin' ? '/admin/clients' : user.role === 'company' ? '/empresa' : '/dashboard'} replace />
+            ? <Navigate to={user.role === 'admin' || user.role === 'staff' ? '/admin/clients' : user.role === 'company' ? '/empresa' : '/dashboard'} replace />
             : <LandingPage />
         }
       />
@@ -41,7 +43,7 @@ function AppRoutes() {
         path="/login"
         element={
           user
-            ? <Navigate to={user.role === 'admin' ? '/admin/clients' : user.role === 'company' ? '/empresa' : '/dashboard'} replace />
+            ? <Navigate to={user.role === 'admin' || user.role === 'staff' ? '/admin/clients' : user.role === 'company' ? '/empresa' : '/dashboard'} replace />
             : <AuthPage />
         }
       />
@@ -66,6 +68,8 @@ function AppRoutes() {
         <Route path="clients/:clientId" element={<AdminClientDetail />} />
         <Route path="empresas" element={<AdminEmpresas />} />
         <Route path="empresas/:companyId" element={<AdminEmpresaDetail />} />
+        <Route path="tareas" element={<AdminTareas />} />
+        <Route path="equipo" element={<AdminStaff />} />
         <Route path="tramites" element={<AdminTramites />} />
         <Route path="email" element={<AdminEmail />} />
         <Route path="audit" element={<AdminAudit />} />

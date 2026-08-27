@@ -1,24 +1,23 @@
 # Tramilex - PRD
 
-## Problema Original
-Sistema de gestion documental para abogado de inmigracion. Clientes y empresas suben documentos, el admin gestiona todo.
-
-## Stack: React + FastAPI + MongoDB + Emergent Object Storage
+## Stack: React + FastAPI + MongoDB + Emergent Object Storage + Groq (Chatbot)
 
 ## Funcionalidades Implementadas
-- Auth JWT (clientes, admin, empresas con CIF/NIF)
+- Auth JWT (clientes, admin, empresas CIF/NIF, staff)
 - Dashboard Cliente con requisitos colapsables en movil
-- Dashboard Admin completo (clientes, documentos, ficha PDF, audit, SMTP, tramites)
-- Modulo Empresas: admin crea empresas, empresa crea trabajadores con datos extendidos (NIE, DNI, Pasaporte, RUT, nombres, apellidos, telefono, direccion, pais origen/residencia, padre, madre, hijos)
-- Documentos firmados: boton "Subir documento firmado" (categoria firmado), admin ve todos los docs firmados
-- Descarga masiva ZIP por trabajador
-- Envio de credenciales por email con historial
-- Tramites por empresa con estados (pendiente, en proceso, completado, rechazado)
-- Panel empresa: ver tramites, trabajadores, subir docs, ver estado revision
-- Landing page con video
+- Dashboard Admin completo
+- Modulo Empresas (CRUD, trabajadores, documentos, tramites, credenciales, firma)
+- Chatbot asistente con Groq (Llama 3.3 70B)
+- **Staff/Equipo**: Admin crea usuarios del despacho con rol "staff"
+- **Sistema de Tareas**: Crear/asignar tareas con prioridad (baja/media/alta), estados, comentarios
+- **Notificaciones**: Campanita con contador, notificaciones al asignar tareas/comentarios
+- Documentos firmados (flujo descargar-firmar-subir)
+- Panel empresa (tramites, trabajadores, documentos, firma)
 
 ## Colecciones MongoDB
-users, documents, companies, company_workers, company_documents, company_tramites, company_emails, audit_logs, settings, tramite_overrides, custom_tramites
+users, documents, companies, company_workers, company_documents, company_tramites, company_emails, sign_requests, tasks, notifications, chat_messages, audit_logs, settings, tramite_overrides, custom_tramites
 
 ## Backlog
+- Empresas ven requisitos del tramite asignado para subir docs
+- Integrar lectura de correos IMAP para notificaciones
 - Refactorizar server.py en modulos

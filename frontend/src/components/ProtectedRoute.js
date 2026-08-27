@@ -14,7 +14,9 @@ export default function ProtectedRoute({ children, requiredRole }) {
 
   if (!user) return <Navigate to="/login" replace />;
   if (requiredRole && user.role !== requiredRole) {
-    const dest = user.role === 'admin' ? '/admin/clients' : user.role === 'company' ? '/empresa' : '/dashboard';
+    // Staff can access admin routes
+    if (requiredRole === 'admin' && user.role === 'staff') return children;
+    const dest = user.role === 'admin' || user.role === 'staff' ? '/admin/clients' : user.role === 'company' ? '/empresa' : '/dashboard';
     return <Navigate to={dest} replace />;
   }
 
