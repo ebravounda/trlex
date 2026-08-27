@@ -118,7 +118,7 @@ export default function AuthPage() {
       {/* Left - Form */}
       <div className="w-full lg:w-1/2 flex flex-col justify-center px-8 md:px-16 lg:px-20 py-12 bg-white">
         <div className="max-w-md mx-auto w-full">
-          <img src={LOGO_URL} alt="Tramilex" className="h-20 mb-10 object-contain" data-testid="auth-logo" />
+          <img src={LOGO_URL} alt="Tramilex" className="h-28 mb-10 object-contain" data-testid="auth-logo" />
 
           {isLogin ? (
             <>
