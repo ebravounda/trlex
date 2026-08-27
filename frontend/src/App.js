@@ -43,7 +43,7 @@ function AppRoutes() {
         element={
           user
             ? <Navigate to={user.role === 'admin' || user.role === 'staff' ? '/admin/clients' : user.role === 'company' ? '/empresa' : '/dashboard'} replace />
-            : <LandingPage />
+            : <Navigate to="/login" replace />
         }
       />
       <Route
