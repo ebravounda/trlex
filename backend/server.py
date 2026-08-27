@@ -4081,10 +4081,14 @@ async def chatbot_message(body: ChatMessageInput, user=Depends(get_current_user)
 
         response = groq_client.chat.completions.create(
             messages=messages,
-            model="llama-3.3-70b-versatile"
+            model="qwen/qwen3.6-27b"
         )
 
         bot_response = response.choices[0].message.content
+
+        # Strip <think>...</think> tags from reasoning models
+        import re
+        bot_response = re.sub(r'<think>.*?</think>', '', bot_response, flags=re.DOTALL).strip()
 
         # Save messages to DB
         now = datetime.now(timezone.utc).isoformat()
