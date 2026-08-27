@@ -4014,7 +4014,7 @@ FUNCIONES DEL PANEL ADMIN:
 - Configuracion: Configurar SMTP para envio de emails.
 
 Si te preguntan algo que no sea sobre la plataforma, responde: "Solo puedo ayudarte con dudas sobre la plataforma Tramilex."
-Responde siempre en espanol, de forma breve y clara."""
+Responde siempre en espanol, de forma breve y clara. No uses etiquetas <think> ni razonamiento interno."""
 
 CLIENT_SYSTEM_PROMPT = """Eres el asistente virtual de Tramilex, una plataforma de gestion documental para inmigracion. Respondes SOLO preguntas sobre como usar la plataforma como cliente.
 
@@ -4026,7 +4026,7 @@ FUNCIONES DEL PANEL CLIENTE:
 - Descargar tus documentos subidos.
 
 Si te preguntan algo que no sea sobre la plataforma, responde: "Solo puedo ayudarte con dudas sobre la plataforma Tramilex."
-Responde siempre en espanol, de forma breve y clara."""
+Responde siempre en espanol, de forma breve y clara. No uses etiquetas <think> ni razonamiento interno."""
 
 COMPANY_SYSTEM_PROMPT = """Eres el asistente virtual de Tramilex, una plataforma de gestion documental para inmigracion. Respondes SOLO preguntas sobre como usar la plataforma como empresa.
 
@@ -4038,7 +4038,7 @@ FUNCIONES DEL PANEL EMPRESA:
 - Ver estado de revision de los documentos de cada trabajador.
 
 Si te preguntan algo que no sea sobre la plataforma, responde: "Solo puedo ayudarte con dudas sobre la plataforma Tramilex."
-Responde siempre en espanol, de forma breve y clara."""
+Responde siempre en espanol, de forma breve y clara. No uses etiquetas <think> ni razonamiento interno."""
 
 
 class ChatMessageInput(BaseModel):
@@ -4084,11 +4084,16 @@ async def chatbot_message(body: ChatMessageInput, user=Depends(get_current_user)
             model="qwen/qwen3.6-27b"
         )
 
-        bot_response = response.choices[0].message.content
+        bot_response = response.choices[0].message.content or ""
 
         # Strip <think>...</think> tags from reasoning models
         import re
-        bot_response = re.sub(r'<think>.*?</think>', '', bot_response, flags=re.DOTALL).strip()
+        bot_response = re.sub(r'<think>[\s\S]*?</think>', '', bot_response).strip()
+        # If still has unclosed <think> tag, remove everything from it
+        if '<think>' in bot_response:
+            bot_response = bot_response[:bot_response.find('<think>')].strip()
+        if not bot_response:
+            bot_response = "Hola. Solo puedo ayudarte con dudas sobre la plataforma Tramilex. Que deseas consultar?"
 
         # Save messages to DB
         now = datetime.now(timezone.utc).isoformat()
