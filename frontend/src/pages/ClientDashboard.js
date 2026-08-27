@@ -8,7 +8,15 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
 import ChatBot from '@/components/ChatBot';
+import InteractiveTutorial from '@/components/InteractiveTutorial';
 import { Upload, Download, LogOut, FileText, Image as ImageIcon, Clock, Tag, ClipboardList, ChevronDown } from 'lucide-react';
+
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h >= 6 && h < 12) return 'Buenos dias';
+  if (h >= 12 && h < 20) return 'Buenas tardes';
+  return 'Buenas noches';
+}
 
 const LOGO_URL = "https://customer-assets-lxgj4vgw.emergentagent.net/job_inmigra-docs/artifacts/8hv3nj18_tramilex_logo_1600x900.png";
 
@@ -53,7 +61,12 @@ export default function ClientDashboard() {
   const [selectedCategory, setSelectedCategory] = useState('otros');
   const [tramiteInfo, setTramiteInfo] = useState(null);
   const [requisitosOpen, setRequisitosOpen] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const fileInputRef = useRef(null);
+
+  useEffect(() => {
+    if (user && !user.tutorial_seen) setShowTutorial(true);
+  }, [user]);
 
   const fetchDocuments = useCallback(async () => {
     try {
@@ -144,13 +157,14 @@ export default function ClientDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-50" data-testid="client-dashboard">
+      {showTutorial && <InteractiveTutorial role="client" onComplete={() => setShowTutorial(false)} />}
       {/* Header */}
       <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-xl border-b border-slate-200">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <img src={LOGO_URL} alt="Tramilex" className="h-9 object-contain" data-testid="client-logo" />
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-600 hidden sm:inline">
-              Hola, <span className="font-semibold text-slate-900">{user?.name}</span>
+            <span className="text-sm text-slate-600 hidden sm:inline" data-testid="client-greeting">
+              {getGreeting()}, <span className="font-semibold text-slate-900">{(user?.name || '').split(' ')[0]}</span>
             </span>
             <Button
               variant="ghost"

@@ -36,6 +36,10 @@ export function AuthProvider({ children }) {
   const login = useCallback(async (email, password) => {
     const res = await api.post('/auth/login', { email, password });
     localStorage.setItem('tramilex_token', res.data.token);
+    // Store password temporarily for force-change flow
+    if (res.data.must_change_password) {
+      sessionStorage.setItem('tramilex_temp_pw', password);
+    }
     try {
       const meRes = await api.get('/auth/me');
       const userData = meRes.data;

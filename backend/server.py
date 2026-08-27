@@ -490,6 +490,8 @@ async def login(input_data: LoginInput):
         "email": email,
         "name": user.get("name", ""),
         "role": user.get("role", "client"),
+        "must_change_password": user.get("must_change_password", False),
+        "tutorial_seen": user.get("tutorial_seen", False),
         "token": token
     }
 
@@ -518,10 +520,21 @@ async def change_password(body: ChangePasswordInput, user=Depends(get_current_us
 
     await db.users.update_one(
         {"_id": ObjectId(user["_id"])},
-        {"$set": {"password_hash": hash_password(body.new_password)}}
+        {"$set": {"password_hash": hash_password(body.new_password), "must_change_password": False}}
     )
     await log_audit("password_changed", user["_id"], user.get("name", ""), {})
     return {"message": "Contrasena actualizada correctamente"}
+
+
+@api_router.put("/auth/tutorial-seen")
+async def mark_tutorial_seen(user=Depends(get_current_user)):
+    user_id = user["_id"]
+    role = user.get("role", "")
+    if role == "company":
+        await db.companies.update_one({"_id": ObjectId(user_id)}, {"$set": {"tutorial_seen": True}})
+    else:
+        await db.users.update_one({"_id": ObjectId(user_id)}, {"$set": {"tutorial_seen": True}})
+    return {"message": "Tutorial marcado como visto"}
 
 
 # --- Documents Routes ---
@@ -2870,12 +2883,50 @@ def send_welcome_email(to_email, name):
         logger.error(f"Error enviando welcome email: {e}")
 
 
+def _send_staff_welcome_email(to_email, name, temp_password):
+    try:
+        settings = sync_db.settings.find_one({"type": "smtp"})
+        if not settings or not settings.get("smtp_host"):
+            logger.warning("SMTP not configured, skipping staff welcome email")
+            return
+        msg = MIMEMultipart()
+        msg["From"] = settings["from_email"]
+        msg["To"] = to_email
+        msg["Subject"] = "Bienvenido al equipo Tramilex"
+        body = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <h2 style="color: #0f172a;">Bienvenido al equipo Tramilex!</h2>
+            <p>Hola <strong>{name}</strong>,</p>
+            <p>Ya estas habilitado para operar en el portal Tramilex. Tu cuenta ha sido creada exitosamente.</p>
+            <p>Tus credenciales de acceso son:</p>
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                <p style="margin: 4px 0;"><strong>Email:</strong> {to_email}</p>
+                <p style="margin: 4px 0;"><strong>Contrasena temporal:</strong> {temp_password}</p>
+            </div>
+            <p><strong>Importante:</strong> Al iniciar sesion por primera vez, el sistema te pedira cambiar tu contrasena por seguridad.</p>
+            <div style="text-align: center; margin: 24px 0;">
+                <a href="https://www.tramilex.es" style="display: inline-block; background: #0f172a; color: white; padding: 12px 32px; border-radius: 8px; text-decoration: none; font-weight: bold; font-size: 16px;">Portal</a>
+            </div>
+            <p style="margin-top: 24px;">Un cordial saludo,<br><strong>El equipo de Tramilex</strong></p>
+        </div>
+        """
+        msg.attach(MIMEText(body, "html"))
+        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
+        server.starttls()
+        server.login(settings["smtp_user"], settings["smtp_password"])
+        server.send_message(msg)
+        server.quit()
+        logger.info(f"Staff welcome email sent to {to_email}")
+    except Exception as e:
+        logger.error(f"Error enviando staff welcome email: {e}")
+
+
 # ============================
 # --- Staff Management (Admin only) ---
 # ============================
 
 @api_router.post("/staff")
-async def create_staff(body: StaffCreateInput, user=Depends(require_admin)):
+async def create_staff(body: StaffCreateInput, background_tasks: BackgroundTasks, user=Depends(require_admin)):
     email = body.email.lower().strip()
     if not email or not body.password or not body.name.strip():
         raise HTTPException(status_code=400, detail="Nombre, email y contrasena son obligatorios")
@@ -2891,9 +2942,14 @@ async def create_staff(body: StaffCreateInput, user=Depends(require_admin)):
         "phone": body.phone.strip(),
         "position": body.position.strip(),
         "role": "staff",
+        "must_change_password": True,
+        "tutorial_seen": False,
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     result = await db.users.insert_one(user_doc)
+
+    # Send welcome email in background
+    background_tasks.add_task(_send_staff_welcome_email, email, body.name.strip(), body.password)
 
     await log_audit("staff_created", user["_id"], user.get("name", ""),
                     {"staff_id": str(result.inserted_id), "staff_name": body.name, "email": email})

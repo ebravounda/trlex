@@ -7,6 +7,15 @@ import { useState, useEffect, useCallback } from 'react';
 
 import ChatBot from '@/components/ChatBot';
 import NotificationBell from '@/components/NotificationBell';
+import ForcePasswordChange from '@/components/ForcePasswordChange';
+import InteractiveTutorial from '@/components/InteractiveTutorial';
+
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h >= 6 && h < 12) return 'Buenos dias';
+  if (h >= 12 && h < 20) return 'Buenas tardes';
+  return 'Buenas noches';
+}
 
 const LOGO_URL = "https://customer-assets-lxgj4vgw.emergentagent.net/job_inmigra-docs/artifacts/8hv3nj18_tramilex_logo_1600x900.png";
 
@@ -96,6 +105,8 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inboxUnread, setInboxUnread] = useState(0);
   const [citasCount, setCitasCount] = useState(0);
+  const [showForcePw, setShowForcePw] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const { user } = useAuth();
 
   const checkInbox = useCallback(async () => {
@@ -121,8 +132,26 @@ export default function AdminLayout() {
     return () => clearInterval(interval);
   }, [checkInbox, checkCitas]);
 
+  useEffect(() => {
+    if (user?.must_change_password) setShowForcePw(true);
+    else if (user && !user.tutorial_seen) setShowTutorial(true);
+  }, [user]);
+
+  const greeting = getGreeting();
+  const firstName = (user?.name || '').split(' ')[0];
+
   return (
     <div className="min-h-screen bg-slate-50 flex" data-testid="admin-layout">
+      {showForcePw && (
+        <ForcePasswordChange
+          currentPassword={sessionStorage.getItem('tramilex_temp_pw') || ''}
+          onComplete={() => { setShowForcePw(false); sessionStorage.removeItem('tramilex_temp_pw'); if (!user?.tutorial_seen) setShowTutorial(true); }}
+        />
+      )}
+      {showTutorial && !showForcePw && (
+        <InteractiveTutorial role={user?.role || 'admin'} onComplete={() => setShowTutorial(false)} />
+      )}
+
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 flex-col fixed inset-y-0 left-0 z-30">
         <SidebarContent inboxUnread={inboxUnread} citasCount={citasCount} />
@@ -150,8 +179,8 @@ export default function AdminLayout() {
             >
               <Menu className="w-5 h-5 text-slate-700" />
             </button>
-            <span className="text-sm text-slate-500 font-medium" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }}>
-              Panel de Administracion
+            <span className="text-sm text-slate-700 font-medium" style={{ fontFamily: 'IBM Plex Sans, sans-serif' }} data-testid="admin-greeting">
+              {greeting}, <span className="font-semibold">{firstName}</span>
             </span>
           </div>
           <div className="flex items-center gap-3">

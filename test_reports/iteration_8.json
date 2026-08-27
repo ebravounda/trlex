@@ -1,0 +1,49 @@
+{
+  "summary": "Tested new UX features: force password change on first staff login, interactive tutorial, tutorial-seen persistence, time-based greetings, and staff creation defaults. Backend: 10/10 pytest passed - login returns must_change_password=true & tutorial_seen=false for new staff, existing admin returns false/true respectively, PUT /auth/change-password clears must_change_password, PUT /auth/tutorial-seen persists across re-login, wrong current password -> 400, short new password -> 400, unauth 401/403, POST /staff creates user with both flags set correctly, duplicate email -> 400. Frontend: end-to-end flow verified via Playwright - created TEST staff via API, logged in and saw force-password-modal (cannot dismiss via outside click or Escape), greeting 'Buenas noches, UI' shown behind modal, submitted new password -> modal closes and interactive-tutorial appears with next/skip buttons, clicked through 3 steps then dismissed via 'No mostrar mas' (tutorial-skip), logged out and re-logged: no force-pw modal and no tutorial (tutorial_seen persisted), greeting 'Buenas noches, UI' shown. Existing admin (malcafuz) login: no modals, greeting 'Buenas noches, Administrador'. Client (testmovil): greeting 'Buenas noches, Test' shown in client dashboard, no tutorial (existing user). Cleanup: TEST staff user deleted via DELETE /api/staff/{id}.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "passed_tests": [
+    "POST /api/auth/login returns must_change_password=true, tutorial_seen=false for new staff",
+    "POST /api/auth/login returns must_change_password=false, tutorial_seen=true for existing admin (malcafuz)",
+    "PUT /api/auth/change-password with correct current pw clears must_change_password (verified via re-login)",
+    "PUT /api/auth/change-password wrong current -> 400; short new (<6) -> 400; unauth -> 401/403",
+    "PUT /api/auth/tutorial-seen persists tutorial_seen=true (verified via re-login); unauth -> 401/403",
+    "POST /api/staff creates user with must_change_password=true and tutorial_seen=false (verified via login)",
+    "POST /api/staff duplicate email -> 400; unauth -> 401/403",
+    "DELETE /api/staff/{id} deletes staff (used for cleanup)",
+    "UI new-staff login: force-password-modal appears; cannot dismiss via click-outside or Escape",
+    "UI admin-greeting shows time-based prefix (Buenos dias/Buenas tardes/Buenas noches) + first name",
+    "UI force-pw submit closes modal and opens interactive-tutorial",
+    "UI tutorial: next button advances steps; skip (No mostrar mas) dismisses and calls /auth/tutorial-seen",
+    "UI re-login same user: no force-pw modal, no tutorial reappearing",
+    "UI existing admin login: no modals shown, greeting shows 'Administrador'",
+    "UI client dashboard: client-greeting shows time-based greeting + first name (Test)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_first_login_tutorial.py",
+    "/app/test_reports/pytest/iter8_first_login.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "ForcePasswordChange modal has no server-side enforcement: after login the JWT is issued regardless of must_change_password, so a client could skip the frontend modal and directly hit any authenticated endpoint. Consider gating protected routes on the backend for users with must_change_password=true (return 428 Precondition Required until changed).",
+    "AuthContext stores the temporary plaintext password in sessionStorage under 'tramilex_temp_pw' to pre-fill the force-change form. This is a mild secret exposure via devtools/XSS; the modal already asks user to confirm current password so pre-filling is not strictly necessary. Consider removing the sessionStorage caching.",
+    "PUT /auth/tutorial-seen uses ObjectId(user_id) without try/except; if user_id is malformed a bson.errors.InvalidId is raised -> 500. Wrap with try/except.",
+    "Time-based greeting uses client-local Date().getHours() (not server time as noted in review_request). This means the greeting reflects the user's browser locale/clock, which is likely desired but differs from statement that 'greeting depends on server time (UTC)'. Confirm expected behavior.",
+    "InteractiveTutorial.js swallows /auth/tutorial-seen errors silently (`try { await api.put(...); } catch {}`) - if the API fails the UI still hides the tutorial locally, and it may reappear on next fresh login. Consider surfacing a toast on failure.",
+    "server.py is now 4178 lines - continues to exceed 700-line guideline. Splitting into routers (auth, staff, presupuestos, settings, citas, inbox) is overdue.",
+    "_send_staff_welcome_email uses synchronous smtplib inside a BackgroundTask - fine for BackgroundTasks (runs in threadpool), but there's no error surfacing to admin if SMTP is misconfigured; only logger.error. Consider recording a delivery status."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_first_login_tutorial.py (new)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% for tested flows"},
+  "test_credentials": {
+    "admin": "malcafuz@tramilex.es / Admin123!",
+    "client": "testmovil@test.com / Test1234!"
+  },
+  "seed_data_creation": "Created ephemeral TEST_staff_* users during pytest (auto-cleaned via DELETE /api/staff/{id}). Created TEST_uistaff_1787870239@tramilex.es for UI test (password changed to NuevaClave123!), deleted after test completion (verified 200). No residual test data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Auth flags: /api/auth/login returns {must_change_password, tutorial_seen}. Endpoints: PUT /api/auth/change-password {current_password,new_password}, PUT /api/auth/tutorial-seen (no body). New staff created via POST /api/staff always gets must_change_password=true & tutorial_seen=false. Existing admin (malcafuz) and existing client (testmovil) already have tutorial_seen=true so tutorial won't fire for them. Frontend testids: force-password-modal, force-new-pw, force-confirm-pw, force-pw-submit; interactive-tutorial, tutorial-next, tutorial-skip, tutorial-finish, tutorial-close; admin-greeting, client-greeting, company-greeting. To retest force-pw flow, always create a fresh staff via POST /api/staff since must_change_password is one-shot. Greeting uses client-local browser time (not server UTC).",
+  "rca of the issue": "N/A - no bugs found in this iteration. See critical_code_review_comments for hardening opportunities (backend enforcement of must_change_password, sessionStorage temp password, greeting time source, server.py size)."
+}

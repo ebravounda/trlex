@@ -16,6 +16,14 @@ import {
 } from 'lucide-react';
 
 import ChatBot from '@/components/ChatBot';
+import InteractiveTutorial from '@/components/InteractiveTutorial';
+
+function getGreeting() {
+  const h = new Date().getHours();
+  if (h >= 6 && h < 12) return 'Buenos dias';
+  if (h >= 12 && h < 20) return 'Buenas tardes';
+  return 'Buenas noches';
+}
 
 const LOGO_URL = "https://customer-assets-lxgj4vgw.emergentagent.net/job_inmigra-docs/artifacts/8hv3nj18_tramilex_logo_1600x900.png";
 
@@ -76,6 +84,7 @@ export default function CompanyDashboard() {
   const [signRequests, setSignRequests] = useState([]);
   const [uploadingSignedFor, setUploadingSignedFor] = useState(null);
   const [tramiteRequirements, setTramiteRequirements] = useState([]);
+  const [showTutorial, setShowTutorial] = useState(false);
   const fileInputRef = useRef(null);
   const signedInputRef = useRef(null);
   const signedUploadRef = useRef(null);
@@ -214,15 +223,19 @@ export default function CompanyDashboard() {
 
   const updateWorkerField = (field, value) => setWorkerForm(prev => ({ ...prev, [field]: value }));
 
+  useEffect(() => {
+    if (user && !user.tutorial_seen) setShowTutorial(true);
+  }, [user]);
+
   return (
     <div className="min-h-screen bg-slate-50" data-testid="company-dashboard">
+      {showTutorial && <InteractiveTutorial role="company" onComplete={() => setShowTutorial(false)} />}
       <header className="sticky top-0 z-20 bg-white/80 backdrop-blur-xl border-b border-slate-200">
         <div className="max-w-5xl mx-auto px-6 py-4 flex items-center justify-between">
           <img src={LOGO_URL} alt="Tramilex" className="h-9 object-contain" />
           <div className="flex items-center gap-4">
-            <span className="text-sm text-slate-600 hidden sm:inline">
-              <Building2 className="w-4 h-4 inline mr-1" />
-              <span className="font-semibold text-slate-900">{user?.name}</span>
+            <span className="text-sm text-slate-600 hidden sm:inline" data-testid="company-greeting">
+              {getGreeting()}, <span className="font-semibold text-slate-900">{(user?.name || '').split(' ')[0]}</span>
             </span>
             <Button variant="ghost" size="sm" className="text-slate-500 hover:text-red-600 gap-2" onClick={handleLogout} data-testid="company-logout-btn">
               <LogOut className="w-4 h-4" /> <span className="hidden sm:inline">Salir</span>
