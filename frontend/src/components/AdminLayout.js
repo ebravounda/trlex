@@ -58,7 +58,7 @@ function SidebarContent({ onClose, inboxUnread, citasCount, chatUnread, userRole
         </div>
       </div>
 
-      <nav className="flex-1 p-4 space-y-1">
+      <nav className="flex-1 p-4 space-y-1 overflow-y-auto">
         {navItems.filter(item => !item.adminOnly || userRole === 'admin').map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
