@@ -679,7 +679,7 @@ async def preview_document(doc_id: str, request: Request):
 
 
 @api_router.delete("/documents/{doc_id}")
-async def delete_document(doc_id: str, user=Depends(require_admin)):
+async def delete_document(doc_id: str, user=Depends(require_staff_or_admin)):
     try:
         result = await db.documents.update_one(
             {"_id": ObjectId(doc_id)},
@@ -694,7 +694,7 @@ async def delete_document(doc_id: str, user=Depends(require_admin)):
 
 
 @api_router.put("/documents/{doc_id}/status")
-async def update_document_status(doc_id: str, body: DocumentStatusUpdate, background_tasks: BackgroundTasks, user=Depends(require_admin)):
+async def update_document_status(doc_id: str, body: DocumentStatusUpdate, background_tasks: BackgroundTasks, user=Depends(require_staff_or_admin)):
     if body.status not in ["pending_review", "reviewed"]:
         raise HTTPException(status_code=400, detail="Estado invalido")
     try:
@@ -731,7 +731,7 @@ async def update_document_status(doc_id: str, body: DocumentStatusUpdate, backgr
 
 
 @api_router.put("/documents/{doc_id}/rename")
-async def rename_document(doc_id: str, body: DocumentRenameInput, user=Depends(require_admin)):
+async def rename_document(doc_id: str, body: DocumentRenameInput, user=Depends(require_staff_or_admin)):
     display_name = body.display_name.strip()
     if not display_name:
         raise HTTPException(status_code=400, detail="El nombre no puede estar vacio")
@@ -781,13 +781,13 @@ async def get_clients(
 
 
 @api_router.get("/clients/countries/list")
-async def get_countries(user=Depends(require_admin)):
+async def get_countries(user=Depends(require_staff_or_admin)):
     countries = await db.users.distinct("origin_country", {"role": "client", "origin_country": {"$ne": ""}})
     return sorted(countries)
 
 
 @api_router.get("/clients/{client_id}")
-async def get_client_detail(client_id: str, user=Depends(require_admin)):
+async def get_client_detail(client_id: str, user=Depends(require_staff_or_admin)):
     try:
         client = await db.users.find_one(
             {"_id": ObjectId(client_id), "role": "client"},
@@ -825,7 +825,7 @@ async def get_client_detail(client_id: str, user=Depends(require_admin)):
 
 
 @api_router.get("/clients/{client_id}/ficha")
-async def generate_ficha_pdf(client_id: str, user=Depends(require_admin)):
+async def generate_ficha_pdf(client_id: str, user=Depends(require_staff_or_admin)):
     try:
         client = await db.users.find_one(
             {"_id": ObjectId(client_id), "role": "client"},
@@ -994,7 +994,7 @@ async def admin_upload_to_client(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     category: str = Form("resolucion"),
-    user=Depends(require_admin)
+    user=Depends(require_staff_or_admin)
 ):
     client = await db.users.find_one({"_id": ObjectId(client_id), "role": "client"}, {"password_hash": 0})
     if not client:
@@ -1064,7 +1064,7 @@ async def admin_upload_to_client(
 
 # --- Bulk Download (ZIP) ---
 @api_router.get("/clients/{client_id}/download-all")
-async def download_all_documents(client_id: str, user=Depends(require_admin)):
+async def download_all_documents(client_id: str, user=Depends(require_staff_or_admin)):
     client = await db.users.find_one({"_id": ObjectId(client_id), "role": "client"}, {"name": 1})
     if not client:
         raise HTTPException(status_code=404, detail="Cliente no encontrado")
@@ -1126,7 +1126,7 @@ async def get_audit_logs(
 
 # --- Custom Tramites (Admin CRUD) ---
 @api_router.get("/admin/tramites")
-async def get_all_tramites_admin(user=Depends(require_admin)):
+async def get_all_tramites_admin(user=Depends(require_staff_or_admin)):
     overrides = {}
     override_list = await db.tramite_overrides.find({}).to_list(1000)
     for o in override_list:
@@ -1158,7 +1158,7 @@ async def get_all_tramites_admin(user=Depends(require_admin)):
 
 
 @api_router.post("/admin/tramites")
-async def create_custom_tramite(request: Request, user=Depends(require_admin)):
+async def create_custom_tramite(request: Request, user=Depends(require_staff_or_admin)):
     body = await request.json()
     name = body.get("name", "").strip()
     country = body.get("country", "")
@@ -1190,7 +1190,7 @@ async def create_custom_tramite(request: Request, user=Depends(require_admin)):
 
 
 @api_router.delete("/admin/tramites/{tramite_id}")
-async def delete_custom_tramite(tramite_id: str, user=Depends(require_admin)):
+async def delete_custom_tramite(tramite_id: str, user=Depends(require_staff_or_admin)):
     try:
         result = await db.custom_tramites.update_one(
             {"_id": ObjectId(tramite_id)},
@@ -1205,7 +1205,7 @@ async def delete_custom_tramite(tramite_id: str, user=Depends(require_admin)):
 
 
 @api_router.put("/admin/tramites/{tramite_id}/edit")
-async def edit_tramite(tramite_id: str, request: Request, user=Depends(require_admin)):
+async def edit_tramite(tramite_id: str, request: Request, user=Depends(require_staff_or_admin)):
     body = await request.json()
     country = body.get("country", "")
     source = body.get("source", "")
@@ -1298,7 +1298,7 @@ async def get_tramite_detail(country: str, tramite_id: str):
 
 # --- Admin Send Email to Client ---
 @api_router.post("/clients/{client_id}/email")
-async def send_email_to_client(client_id: str, body: SendEmailInput, background_tasks: BackgroundTasks, user=Depends(require_admin)):
+async def send_email_to_client(client_id: str, body: SendEmailInput, background_tasks: BackgroundTasks, user=Depends(require_staff_or_admin)):
     try:
         client = await db.users.find_one({"_id": ObjectId(client_id), "role": "client"}, {"password_hash": 0})
     except Exception:
@@ -1459,7 +1459,7 @@ async def get_presupuesto(pid: str, user=Depends(require_staff_or_admin)):
 
 
 @api_router.delete("/presupuestos/{pid}")
-async def delete_presupuesto(pid: str, user=Depends(require_admin)):
+async def delete_presupuesto(pid: str, user=Depends(require_staff_or_admin)):
     result = await db.presupuestos.delete_one({"_id": ObjectId(pid)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Presupuesto no encontrado")
@@ -1652,7 +1652,7 @@ async def generate_presupuesto_pdf(pid: str, user=Depends(require_staff_or_admin
 
 # --- Appointment Reminder (called periodically) ---
 @api_router.post("/citas/send-reminders")
-async def send_appointment_reminders(user=Depends(require_admin)):
+async def send_appointment_reminders(user=Depends(require_staff_or_admin)):
     now = datetime.now(timezone.utc)
     tomorrow = now + timedelta(hours=24)
     tomorrow_date = tomorrow.strftime("%Y-%m-%d")
@@ -1974,7 +1974,7 @@ def send_company_credentials_email(to_email: str, company_name: str, cif_nif: st
 # ============================
 
 @api_router.post("/companies")
-async def create_company(body: CompanyCreateInput, user=Depends(require_admin)):
+async def create_company(body: CompanyCreateInput, user=Depends(require_staff_or_admin)):
     cif_nif = body.cif_nif.strip().upper()
     if not cif_nif or not body.name.strip():
         raise HTTPException(status_code=400, detail="Nombre y CIF/NIF son obligatorios")
@@ -2039,7 +2039,7 @@ async def list_companies(user=Depends(require_staff_or_admin)):
 
 
 @api_router.get("/companies/{company_id}")
-async def get_company(company_id: str, user=Depends(require_admin)):
+async def get_company(company_id: str, user=Depends(require_staff_or_admin)):
     try:
         c = await db.companies.find_one({"_id": ObjectId(company_id)})
     except Exception:
@@ -2115,7 +2115,7 @@ async def get_company(company_id: str, user=Depends(require_admin)):
 
 
 @api_router.put("/companies/{company_id}")
-async def update_company(company_id: str, body: CompanyUpdateInput, user=Depends(require_admin)):
+async def update_company(company_id: str, body: CompanyUpdateInput, user=Depends(require_staff_or_admin)):
     update_fields = {}
     if body.name: update_fields["name"] = body.name.strip()
     if body.email: update_fields["email"] = body.email.strip().lower()
@@ -2140,7 +2140,7 @@ async def update_company(company_id: str, body: CompanyUpdateInput, user=Depends
 
 
 @api_router.delete("/companies/{company_id}")
-async def delete_company(company_id: str, user=Depends(require_admin)):
+async def delete_company(company_id: str, user=Depends(require_staff_or_admin)):
     try:
         company = await db.companies.find_one({"_id": ObjectId(company_id)})
     except Exception:
@@ -2338,7 +2338,7 @@ async def download_company_document(doc_id: str, user=Depends(get_current_user))
 
 
 @api_router.put("/company-documents/{doc_id}/status")
-async def update_company_doc_status(doc_id: str, body: DocumentStatusUpdate, user=Depends(require_admin)):
+async def update_company_doc_status(doc_id: str, body: DocumentStatusUpdate, user=Depends(require_staff_or_admin)):
     if body.status not in ["pending_review", "reviewed"]:
         raise HTTPException(status_code=400, detail="Estado invalido")
     try:
@@ -2354,7 +2354,7 @@ async def update_company_doc_status(doc_id: str, body: DocumentStatusUpdate, use
 
 
 @api_router.delete("/company-documents/{doc_id}")
-async def delete_company_document(doc_id: str, user=Depends(require_admin)):
+async def delete_company_document(doc_id: str, user=Depends(require_staff_or_admin)):
     try:
         result = await db.company_documents.update_one(
             {"_id": ObjectId(doc_id)},
@@ -2368,7 +2368,7 @@ async def delete_company_document(doc_id: str, user=Depends(require_admin)):
 
 
 @api_router.get("/companies/{company_id}/workers/{worker_id}/documents/download-all")
-async def download_all_worker_documents(company_id: str, worker_id: str, user=Depends(require_admin)):
+async def download_all_worker_documents(company_id: str, worker_id: str, user=Depends(require_staff_or_admin)):
     worker = await db.company_workers.find_one({"_id": ObjectId(worker_id), "company_id": company_id})
     if not worker:
         raise HTTPException(status_code=404, detail="Trabajador no encontrado")
@@ -2400,7 +2400,7 @@ async def download_all_worker_documents(company_id: str, worker_id: str, user=De
 
 # --- Company Tramites ---
 @api_router.post("/companies/{company_id}/tramites")
-async def assign_company_tramite(company_id: str, body: CompanyTramiteInput, user=Depends(require_admin)):
+async def assign_company_tramite(company_id: str, body: CompanyTramiteInput, user=Depends(require_staff_or_admin)):
     company = await db.companies.find_one({"_id": ObjectId(company_id)})
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
@@ -2421,7 +2421,7 @@ async def assign_company_tramite(company_id: str, body: CompanyTramiteInput, use
 
 
 @api_router.put("/companies/{company_id}/tramites/{tramite_id}")
-async def update_company_tramite(company_id: str, tramite_id: str, body: CompanyTramiteUpdateInput, user=Depends(require_admin)):
+async def update_company_tramite(company_id: str, tramite_id: str, body: CompanyTramiteUpdateInput, user=Depends(require_staff_or_admin)):
     try:
         result = await db.company_tramites.update_one(
             {"_id": ObjectId(tramite_id), "company_id": company_id},
@@ -2435,7 +2435,7 @@ async def update_company_tramite(company_id: str, tramite_id: str, body: Company
 
 
 @api_router.delete("/companies/{company_id}/tramites/{tramite_id}")
-async def delete_company_tramite(company_id: str, tramite_id: str, user=Depends(require_admin)):
+async def delete_company_tramite(company_id: str, tramite_id: str, user=Depends(require_staff_or_admin)):
     try:
         result = await db.company_tramites.delete_one({"_id": ObjectId(tramite_id), "company_id": company_id})
     except Exception:
@@ -2447,7 +2447,7 @@ async def delete_company_tramite(company_id: str, tramite_id: str, user=Depends(
 
 # --- Company Credentials & Email ---
 @api_router.post("/companies/{company_id}/send-credentials")
-async def send_credentials(company_id: str, body: CompanySendCredentialsInput, background_tasks: BackgroundTasks, user=Depends(require_admin)):
+async def send_credentials(company_id: str, body: CompanySendCredentialsInput, background_tasks: BackgroundTasks, user=Depends(require_staff_or_admin)):
     company = await db.companies.find_one({"_id": ObjectId(company_id)})
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
@@ -2479,7 +2479,7 @@ async def send_credentials(company_id: str, body: CompanySendCredentialsInput, b
 
 
 @api_router.post("/companies/{company_id}/resend-email/{email_id}")
-async def resend_company_email(company_id: str, email_id: str, background_tasks: BackgroundTasks, user=Depends(require_admin)):
+async def resend_company_email(company_id: str, email_id: str, background_tasks: BackgroundTasks, user=Depends(require_staff_or_admin)):
     company = await db.companies.find_one({"_id": ObjectId(company_id)})
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
@@ -2604,7 +2604,7 @@ async def company_list_tramites(user=Depends(require_company)):
 async def upload_sign_request(
     company_id: str,
     file: UploadFile = File(...),
-    user=Depends(require_admin)
+    user=Depends(require_staff_or_admin)
 ):
     company = await db.companies.find_one({"_id": ObjectId(company_id)})
     if not company:
@@ -2728,7 +2728,7 @@ async def upload_signed_document(
 
 
 @api_router.delete("/sign-requests/{doc_id}")
-async def delete_sign_request(doc_id: str, user=Depends(require_admin)):
+async def delete_sign_request(doc_id: str, user=Depends(require_staff_or_admin)):
     result = await db.sign_requests.update_one(
         {"_id": ObjectId(doc_id)}, {"$set": {"is_deleted": True}}
     )
@@ -2779,7 +2779,7 @@ async def company_sign_requests(user=Depends(require_company)):
 
 # --- Admin: Signed Documents from all companies ---
 @api_router.get("/admin/signed-documents")
-async def get_all_signed_documents(user=Depends(require_admin)):
+async def get_all_signed_documents(user=Depends(require_staff_or_admin)):
     docs = []
     async for d in db.company_documents.find({"category": "firmado", "is_deleted": False}).sort("uploaded_at", -1):
         worker = await db.company_workers.find_one({"_id": ObjectId(d["worker_id"])})
@@ -3244,19 +3244,23 @@ async def mark_all_notifications_read(user=Depends(require_staff_or_admin)):
 # ============================
 
 def get_ms_graph_token():
-    import msal
-    client_id = os.environ.get("MS_CLIENT_ID", "")
-    tenant_id = os.environ.get("MS_TENANT_ID", "")
-    client_secret = os.environ.get("MS_CLIENT_SECRET", "")
-    if not client_id or not tenant_id or not client_secret:
+    try:
+        import msal
+        client_id = os.environ.get("MS_CLIENT_ID", "")
+        tenant_id = os.environ.get("MS_TENANT_ID", "")
+        client_secret = os.environ.get("MS_CLIENT_SECRET", "")
+        if not client_id or not tenant_id or not client_secret:
+            return None
+        app = msal.ConfidentialClientApplication(
+            client_id,
+            authority=f"https://login.microsoftonline.com/{tenant_id}",
+            client_credential=client_secret
+        )
+        result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
+        return result.get("access_token")
+    except Exception as e:
+        logger.error(f"MSAL token error: {e}")
         return None
-    app = msal.ConfidentialClientApplication(
-        client_id,
-        authority=f"https://login.microsoftonline.com/{tenant_id}",
-        client_credential=client_secret
-    )
-    result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
-    return result.get("access_token")
 
 
 def fetch_outlook_emails(limit=30):
@@ -3633,7 +3637,7 @@ async def add_payment(billing_id: str, body: PaymentInput, user=Depends(require_
 
 
 @api_router.delete("/billing/{billing_id}")
-async def delete_billing(billing_id: str, user=Depends(require_admin)):
+async def delete_billing(billing_id: str, user=Depends(require_staff_or_admin)):
     result = await db.billing.delete_one({"_id": ObjectId(billing_id)})
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Registro no encontrado")
