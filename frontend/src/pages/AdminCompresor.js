@@ -43,7 +43,7 @@ export default function AdminCompresor() {
       const res = await api.post('/compress-pdf', formData, {
         responseType: 'blob',
         headers: { 'Content-Type': 'multipart/form-data' },
-        timeout: 120000,
+        timeout: 300000,
       });
 
       const originalSize = parseInt(res.headers['x-original-size'] || '0');

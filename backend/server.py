@@ -1503,6 +1503,7 @@ async def compress_pdf(
 ):
     import pymupdf
     from PIL import Image
+    import asyncio
 
     if not file.filename.lower().endswith('.pdf'):
         raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
@@ -1521,61 +1522,74 @@ async def compress_pdf(
                       "X-Already-Small": "true"}
         )
 
-    try:
-        best_result = None
+    def _do_compress():
+        doc = pymupdf.open(stream=content, filetype="pdf")
+        num_pages = len(doc)
+        ratio = target_bytes / original_size
 
-        for dpi in [150, 120, 100, 80, 60, 45]:
-            for quality in [75, 50, 35, 20]:
-                doc = pymupdf.open(stream=content, filetype="pdf")
-                new_doc = pymupdf.open()
+        # Estimate DPI and quality based on compression ratio needed
+        if ratio > 0.5:
+            settings_list = [(120, 65), (100, 50), (90, 40)]
+        elif ratio > 0.2:
+            settings_list = [(100, 45), (80, 35), (70, 25)]
+        elif ratio > 0.1:
+            settings_list = [(80, 30), (60, 25), (50, 20)]
+        else:
+            settings_list = [(60, 20), (45, 15), (36, 10)]
 
-                for page in doc:
-                    pix = page.get_pixmap(dpi=dpi)
-                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+        best_output = None
+        best_size = float('inf')
 
-                    img_buffer = io.BytesIO()
-                    img.save(img_buffer, format="JPEG", quality=quality, optimize=True)
-                    img_buffer.seek(0)
+        for dpi, quality in settings_list:
+            new_doc = pymupdf.open()
+            for page in doc:
+                pix = page.get_pixmap(dpi=dpi)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                img_buffer = io.BytesIO()
+                img.save(img_buffer, format="JPEG", quality=quality, optimize=True)
+                img_data = img_buffer.getvalue()
+                img_rect = pymupdf.Rect(0, 0, page.rect.width, page.rect.height)
+                new_page = new_doc.new_page(width=page.rect.width, height=page.rect.height)
+                new_page.insert_image(img_rect, stream=img_data)
 
-                    img_rect = pymupdf.Rect(0, 0, page.rect.width, page.rect.height)
-                    new_page = new_doc.new_page(width=page.rect.width, height=page.rect.height)
-                    new_page.insert_image(img_rect, stream=img_buffer.read())
+            output = io.BytesIO()
+            new_doc.save(output, garbage=4, deflate=True)
+            new_doc.close()
+            compressed_size = output.tell()
+            output.seek(0)
 
-                output = io.BytesIO()
-                new_doc.save(output, garbage=4, deflate=True)
-                new_doc.close()
+            logger.info(f"Intento compresion: dpi={dpi} q={quality} -> {compressed_size} bytes ({num_pages} pags)")
+
+            if compressed_size <= target_bytes:
                 doc.close()
+                return output, original_size, compressed_size, False
+            
+            if compressed_size < best_size:
+                best_size = compressed_size
+                best_output = output
 
-                compressed_size = output.tell()
-                output.seek(0)
+        doc.close()
+        if best_output:
+            best_output.seek(0)
+            return best_output, original_size, best_size, True
+        return None, original_size, 0, True
 
-                if compressed_size <= target_bytes:
-                    logger.info(f"PDF comprimido: {original_size} -> {compressed_size} bytes (dpi={dpi}, q={quality})")
-                    return StreamingResponse(
-                        output,
-                        media_type="application/pdf",
-                        headers={"Content-Disposition": f'attachment; filename="comprimido_{file.filename}"',
-                                  "X-Original-Size": str(original_size),
-                                  "X-Compressed-Size": str(compressed_size)}
-                    )
+    try:
+        result = await asyncio.to_thread(_do_compress)
+        output, orig, comp_size, over_target = result
 
-                if best_result is None or compressed_size < best_result[0]:
-                    best_result = (compressed_size, output)
+        if output is None:
+            raise HTTPException(status_code=500, detail="No se pudo comprimir el PDF")
 
-        # Return best attempt even if over target
-        if best_result:
-            best_result[1].seek(0)
-            logger.warning(f"PDF no alcanzo meta: {original_size} -> {best_result[0]} bytes (meta: {target_bytes})")
-            return StreamingResponse(
-                best_result[1],
-                media_type="application/pdf",
-                headers={"Content-Disposition": f'attachment; filename="comprimido_{file.filename}"',
-                          "X-Original-Size": str(original_size),
-                          "X-Compressed-Size": str(best_result[0]),
-                          "X-Over-Target": "true"}
-            )
+        headers = {
+            "Content-Disposition": f'attachment; filename="comprimido_{file.filename}"',
+            "X-Original-Size": str(orig),
+            "X-Compressed-Size": str(comp_size),
+        }
+        if over_target:
+            headers["X-Over-Target"] = "true"
 
-        raise HTTPException(status_code=500, detail="No se pudo comprimir el PDF")
+        return StreamingResponse(output, media_type="application/pdf", headers=headers)
     except HTTPException:
         raise
     except Exception as e:
