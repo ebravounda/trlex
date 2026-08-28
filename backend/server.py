@@ -754,7 +754,7 @@ async def rename_document(doc_id: str, body: DocumentRenameInput, user=Depends(r
 async def get_clients(
     search: str = "",
     origin_country: str = "",
-    user=Depends(require_admin)
+    user=Depends(require_staff_or_admin)
 ):
     query = {"role": "client"}
     if search:
@@ -1106,7 +1106,7 @@ async def get_audit_logs(
     page: int = 1,
     limit: int = 50,
     action: str = "",
-    user=Depends(require_admin)
+    user=Depends(require_staff_or_admin)
 ):
     query = {}
     if action:
@@ -2013,7 +2013,7 @@ async def create_company(body: CompanyCreateInput, user=Depends(require_admin)):
 
 
 @api_router.get("/companies")
-async def list_companies(user=Depends(require_admin)):
+async def list_companies(user=Depends(require_staff_or_admin)):
     companies = []
     async for c in db.companies.find().sort("created_at", -1):
         worker_count = await db.company_workers.count_documents({"company_id": str(c["_id"])})

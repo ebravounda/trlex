@@ -27,14 +27,14 @@ const navItems = [
   { to: '/admin/contabilidad', label: 'Contabilidad', icon: DollarSign },
   { to: '/admin/presupuestos', label: 'Presupuestos', icon: FileSpreadsheet },
   { to: '/admin/tramites', label: 'Tramites', icon: FileText },
-  { to: '/admin/equipo', label: 'Equipo', icon: UserCog },
+  { to: '/admin/equipo', label: 'Equipo', icon: UserCog, adminOnly: true },
   { to: '/admin/inbox', label: 'Notificaciones email', icon: Inbox },
   { to: '/admin/email', label: 'Enviar correo', icon: Mail },
   { to: '/admin/audit', label: 'Auditoria', icon: ClipboardList },
-  { to: '/admin/settings', label: 'Configuracion', icon: Settings },
+  { to: '/admin/settings', label: 'Configuracion', icon: Settings, adminOnly: true },
 ];
 
-function SidebarContent({ onClose, inboxUnread, citasCount }) {
+function SidebarContent({ onClose, inboxUnread, citasCount, userRole }) {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
@@ -57,7 +57,7 @@ function SidebarContent({ onClose, inboxUnread, citasCount }) {
       </div>
 
       <nav className="flex-1 p-4 space-y-1">
-        {navItems.map(({ to, label, icon: Icon }) => (
+        {navItems.filter(item => !item.adminOnly || userRole === 'admin').map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={to}
@@ -155,7 +155,7 @@ export default function AdminLayout() {
 
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 flex-col fixed inset-y-0 left-0 z-30">
-        <SidebarContent inboxUnread={inboxUnread} citasCount={citasCount} />
+        <SidebarContent inboxUnread={inboxUnread} citasCount={citasCount} userRole={user?.role} />
       </aside>
 
       {/* Mobile overlay */}
@@ -163,7 +163,7 @@ export default function AdminLayout() {
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl z-50">
-            <SidebarContent onClose={() => setSidebarOpen(false)} inboxUnread={inboxUnread} citasCount={citasCount} />
+            <SidebarContent onClose={() => setSidebarOpen(false)} inboxUnread={inboxUnread} citasCount={citasCount} userRole={user?.role} />
           </aside>
         </div>
       )}
