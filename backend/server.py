@@ -3641,6 +3641,187 @@ async def delete_billing(billing_id: str, user=Depends(require_admin)):
 
 
 # ============================
+# --- Team Chat ---
+# ============================
+
+@api_router.get("/team-chat/conversations")
+async def get_conversations(user=Depends(require_staff_or_admin)):
+    user_id = user["_id"]
+    convos = []
+    async for c in db.team_conversations.find({"members": user_id}).sort("updated_at", -1):
+        last_msg = await db.team_messages.find_one({"conversation_id": str(c["_id"])}, sort=[("created_at", -1)])
+        unread = await db.team_messages.count_documents({
+            "conversation_id": str(c["_id"]),
+            "sender_id": {"$ne": user_id},
+            "read_by": {"$nin": [user_id]}
+        })
+        convos.append({
+            "id": str(c["_id"]),
+            "type": c.get("type", "group"),
+            "name": c.get("name", ""),
+            "members": c.get("members", []),
+            "member_names": c.get("member_names", {}),
+            "last_message": last_msg.get("content", "")[:60] if last_msg else "",
+            "last_message_type": last_msg.get("msg_type", "text") if last_msg else "text",
+            "last_sender": last_msg.get("sender_name", "") if last_msg else "",
+            "last_time": last_msg.get("created_at", "") if last_msg else c.get("created_at", ""),
+            "unread": unread,
+        })
+    return convos
+
+
+@api_router.post("/team-chat/conversations")
+async def create_conversation(request: Request, user=Depends(require_staff_or_admin)):
+    body = await request.json()
+    conv_type = body.get("type", "private")
+    member_ids = body.get("members", [])
+    name = body.get("name", "")
+
+    user_id = user["_id"]
+    if user_id not in member_ids:
+        member_ids.append(user_id)
+
+    if conv_type == "private" and len(member_ids) == 2:
+        existing = await db.team_conversations.find_one({
+            "type": "private",
+            "members": {"$all": member_ids, "$size": 2}
+        })
+        if existing:
+            return {"id": str(existing["_id"]), "existing": True}
+
+    member_names = {}
+    for mid in member_ids:
+        u = await db.users.find_one({"_id": ObjectId(mid)}, {"name": 1})
+        if u:
+            member_names[mid] = u.get("name", "")
+
+    doc = {
+        "type": conv_type,
+        "name": name if conv_type == "group" else "",
+        "members": member_ids,
+        "member_names": member_names,
+        "created_by": user_id,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    result = await db.team_conversations.insert_one(doc)
+    return {"id": str(result.inserted_id), "existing": False}
+
+
+@api_router.get("/team-chat/conversations/{conv_id}/messages")
+async def get_messages(conv_id: str, limit: int = 50, before: str = "", user=Depends(require_staff_or_admin)):
+    conv = await db.team_conversations.find_one({"_id": ObjectId(conv_id)})
+    if not conv or user["_id"] not in conv.get("members", []):
+        raise HTTPException(status_code=403, detail="No tienes acceso a esta conversacion")
+
+    query = {"conversation_id": conv_id}
+    if before:
+        query["created_at"] = {"$lt": before}
+
+    msgs = await db.team_messages.find(query).sort("created_at", -1).limit(limit).to_list(limit)
+    msgs.reverse()
+
+    await db.team_messages.update_many(
+        {"conversation_id": conv_id, "sender_id": {"$ne": user["_id"]}, "read_by": {"$nin": [user["_id"]]}},
+        {"$addToSet": {"read_by": user["_id"]}}
+    )
+
+    result = []
+    for m in msgs:
+        result.append({
+            "id": str(m["_id"]),
+            "sender_id": m["sender_id"],
+            "sender_name": m.get("sender_name", ""),
+            "content": m.get("content", ""),
+            "msg_type": m.get("msg_type", "text"),
+            "file_url": m.get("file_url", ""),
+            "file_name": m.get("file_name", ""),
+            "created_at": m["created_at"],
+        })
+    return result
+
+
+@api_router.post("/team-chat/conversations/{conv_id}/messages")
+async def send_message(conv_id: str, request: Request, user=Depends(require_staff_or_admin)):
+    body = await request.json()
+    content = body.get("content", "").strip()
+    msg_type = body.get("msg_type", "text")
+    file_url = body.get("file_url", "")
+    file_name = body.get("file_name", "")
+
+    if not content and not file_url:
+        raise HTTPException(status_code=400, detail="Mensaje vacio")
+
+    conv = await db.team_conversations.find_one({"_id": ObjectId(conv_id)})
+    if not conv or user["_id"] not in conv.get("members", []):
+        raise HTTPException(status_code=403, detail="No tienes acceso")
+
+    msg = {
+        "conversation_id": conv_id,
+        "sender_id": user["_id"],
+        "sender_name": user.get("name", ""),
+        "content": content,
+        "msg_type": msg_type,
+        "file_url": file_url,
+        "file_name": file_name,
+        "read_by": [user["_id"]],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    result = await db.team_messages.insert_one(msg)
+    await db.team_conversations.update_one(
+        {"_id": ObjectId(conv_id)},
+        {"$set": {"updated_at": datetime.now(timezone.utc).isoformat()}}
+    )
+    return {"id": str(result.inserted_id), "created_at": msg["created_at"]}
+
+
+@api_router.post("/team-chat/upload")
+async def upload_chat_file(file: UploadFile = File(...), user=Depends(require_staff_or_admin)):
+    allowed_ext = ["pdf", "jpg", "jpeg", "png", "gif", "webp"]
+    ext = file.filename.split(".")[-1].lower() if "." in file.filename else ""
+    if ext not in allowed_ext:
+        raise HTTPException(status_code=400, detail="Solo PDF e imagenes permitidos")
+    data = await file.read()
+    if len(data) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Maximo 10MB")
+    content_type = file.content_type or "application/octet-stream"
+    storage_path = f"{APP_NAME}/chat/{user['_id']}/{uuid.uuid4()}.{ext}"
+    result = put_object(storage_path, data, content_type)
+    return {"file_url": result["path"], "file_name": file.filename, "content_type": content_type}
+
+
+@api_router.get("/team-chat/file")
+async def get_chat_file(path: str, user=Depends(require_staff_or_admin)):
+    data, content_type = get_object(path)
+    filename = path.split("/")[-1] if "/" in path else "file"
+    return FastAPIResponse(content=data, media_type=content_type,
+                           headers={"Content-Disposition": f'inline; filename="{filename}"'})
+
+
+@api_router.get("/team-chat/unread-total")
+async def get_total_unread(user=Depends(require_staff_or_admin)):
+    user_id = user["_id"]
+    convos = await db.team_conversations.find({"members": user_id}, {"_id": 1}).to_list(100)
+    conv_ids = [str(c["_id"]) for c in convos]
+    if not conv_ids:
+        return {"count": 0}
+    count = await db.team_messages.count_documents({
+        "conversation_id": {"$in": conv_ids},
+        "sender_id": {"$ne": user_id},
+        "read_by": {"$nin": [user_id]}
+    })
+    return {"count": count}
+
+
+@api_router.get("/team-chat/staff-list")
+async def get_staff_list(user=Depends(require_staff_or_admin)):
+    staff = []
+    async for u in db.users.find({"role": {"$in": ["admin", "staff"]}, "is_hidden": {"$ne": True}}, {"password_hash": 0}):
+        staff.append({"id": str(u["_id"]), "name": u.get("name", ""), "role": u.get("role", ""), "email": u.get("email", "")})
+    return staff
+
+
+# ============================
 # --- Citas / Appointments ---
 # ============================
 

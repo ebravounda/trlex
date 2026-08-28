@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
-import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog, Inbox, DollarSign, CalendarCheck, FileSpreadsheet } from 'lucide-react';
+import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog, Inbox, DollarSign, CalendarCheck, FileSpreadsheet, MessageCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect, useCallback } from 'react';
 
@@ -26,6 +26,7 @@ const navItems = [
   { to: '/admin/tareas', label: 'Tareas', icon: ListTodo },
   { to: '/admin/contabilidad', label: 'Contabilidad', icon: DollarSign },
   { to: '/admin/presupuestos', label: 'Presupuestos', icon: FileSpreadsheet },
+  { to: '/admin/chat', label: 'Chat Equipo', icon: MessageCircle },
   { to: '/admin/tramites', label: 'Tramites', icon: FileText },
   { to: '/admin/equipo', label: 'Equipo', icon: UserCog, adminOnly: true },
   { to: '/admin/inbox', label: 'Notificaciones email', icon: Inbox },
@@ -34,7 +35,7 @@ const navItems = [
   { to: '/admin/settings', label: 'Configuracion', icon: Settings, adminOnly: true },
 ];
 
-function SidebarContent({ onClose, inboxUnread, citasCount, userRole }) {
+function SidebarContent({ onClose, inboxUnread, citasCount, chatUnread, userRole }) {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
@@ -79,6 +80,9 @@ function SidebarContent({ onClose, inboxUnread, citasCount, userRole }) {
             {to === '/admin/citas' && citasCount > 0 && (
               <span className="ml-auto w-5 h-5 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse-badge" data-testid="citas-badge">{citasCount > 9 ? '9+' : citasCount}</span>
             )}
+            {to === '/admin/chat' && chatUnread > 0 && (
+              <span className="ml-auto w-5 h-5 bg-violet-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse-badge" data-testid="chat-badge">{chatUnread > 9 ? '9+' : chatUnread}</span>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -105,6 +109,7 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [inboxUnread, setInboxUnread] = useState(0);
   const [citasCount, setCitasCount] = useState(0);
+  const [chatUnread, setChatUnread] = useState(0);
   const [showForcePw, setShowForcePw] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const { user } = useAuth();
@@ -126,12 +131,20 @@ export default function AdminLayout() {
     } catch {}
   }, []);
 
+  const checkChatUnread = useCallback(async () => {
+    try {
+      const res = await api.get('/team-chat/unread-total');
+      setChatUnread(res.data.count || 0);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     checkInbox();
     checkCitas();
-    const interval = setInterval(() => { checkInbox(); checkCitas(); }, 60000);
+    checkChatUnread();
+    const interval = setInterval(() => { checkInbox(); checkCitas(); checkChatUnread(); }, 15000);
     return () => clearInterval(interval);
-  }, [checkInbox, checkCitas]);
+  }, [checkInbox, checkCitas, checkChatUnread]);
 
   useEffect(() => {
     if (user?.must_change_password) setShowForcePw(true);
@@ -155,7 +168,7 @@ export default function AdminLayout() {
 
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 flex-col fixed inset-y-0 left-0 z-30">
-        <SidebarContent inboxUnread={inboxUnread} citasCount={citasCount} userRole={user?.role} />
+        <SidebarContent inboxUnread={inboxUnread} citasCount={citasCount} chatUnread={chatUnread} userRole={user?.role} />
       </aside>
 
       {/* Mobile overlay */}
@@ -163,7 +176,7 @@ export default function AdminLayout() {
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl z-50">
-            <SidebarContent onClose={() => setSidebarOpen(false)} inboxUnread={inboxUnread} citasCount={citasCount} userRole={user?.role} />
+            <SidebarContent onClose={() => setSidebarOpen(false)} inboxUnread={inboxUnread} citasCount={citasCount} chatUnread={chatUnread} userRole={user?.role} />
           </aside>
         </div>
       )}
