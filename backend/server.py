@@ -28,6 +28,7 @@ from email.mime.multipart import MIMEMultipart
 from tramites_data import TRAMITES, get_tramites_by_country, get_tramite_docs
 import stripe
 import pymongo
+import resend
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -243,6 +244,11 @@ class MailgunSettingsInput(BaseModel):
     mailgun_domain: str = ""
     mailgun_api_key: str = ""
     mailgun_from_email: str = ""
+
+
+class ResendSettingsInput(BaseModel):
+    resend_api_key: str = ""
+    resend_from_email: str = ""
 
 
 class CompanyInfoSettingsInput(BaseModel):
@@ -512,44 +518,74 @@ async def login(input_data: LoginInput):
     }
 
 
+def _send_email(to_email, subject, html_body):
+    """Universal email sender: tries Resend first, then SMTP."""
+    # Try Resend first
+    resend_settings = sync_db.settings.find_one({"type": "resend"})
+    if resend_settings and resend_settings.get("resend_api_key"):
+        try:
+            resend.api_key = resend_settings["resend_api_key"]
+            from_email = resend_settings.get("resend_from_email", "onboarding@resend.dev")
+            params = {"from": from_email, "to": [to_email], "subject": subject, "html": html_body}
+            resend.Emails.send(params)
+            logger.info(f"Email enviado via Resend a {to_email}")
+            return True
+        except Exception as e:
+            logger.error(f"Error Resend: {e}")
+            # Fall through to SMTP
+
+    # Fallback: SMTP
+    smtp_settings = sync_db.settings.find_one({"type": "smtp"})
+    if smtp_settings and smtp_settings.get("smtp_host"):
+        try:
+            msg = MIMEMultipart()
+            msg["From"] = smtp_settings["from_email"]
+            msg["To"] = to_email
+            msg["Subject"] = subject
+            msg.attach(MIMEText(html_body, "html"))
+            server = smtplib.SMTP(smtp_settings["smtp_host"], smtp_settings["smtp_port"])
+            server.starttls()
+            server.login(smtp_settings["smtp_user"], smtp_settings["smtp_password"])
+            server.send_message(msg)
+            server.quit()
+            logger.info(f"Email enviado via SMTP a {to_email}")
+            return True
+        except Exception as e:
+            logger.error(f"Error SMTP: {e}")
+
+    logger.warning("No hay email configurado (ni Resend ni SMTP)")
+    return False
+
+
+def _get_notify_email():
+    """Get admin notification email from settings."""
+    smtp = sync_db.settings.find_one({"type": "smtp"})
+    if smtp:
+        return smtp.get("notify_email") or smtp.get("from_email", "")
+    return ""
+
+
 def _generate_pin():
     import random
     return str(random.randint(100000, 999999))
 
 
 def _send_pin_email(to_email, name, pin):
-    try:
-        settings = sync_db.settings.find_one({"type": "smtp"})
-        if not settings or not settings.get("smtp_host"):
-            logger.warning("SMTP not configured for PIN")
-            return False
-        msg = MIMEMultipart()
-        msg["From"] = settings["from_email"]
-        msg["To"] = to_email
-        msg["Subject"] = f"Tu codigo de acceso Tramilex: {pin}"
-        body = f"""
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <img src="https://tramilex.es/logo.png" alt="Tramilex" style="height: 50px; margin-bottom: 20px;" />
-            <h2 style="color: #0f172a; margin-bottom: 8px;">Tu codigo de acceso</h2>
-            <p>Hola <strong>{name}</strong>,</p>
-            <p>Tu codigo de acceso para ingresar a Tramilex es:</p>
-            <div style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 12px; padding: 24px; margin: 20px 0; text-align: center;">
-                <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #0f172a; font-family: monospace;">{pin}</span>
-            </div>
-            <p style="color: #64748b; font-size: 13px;">Este codigo expira en <strong>5 minutos</strong>. No lo compartas con nadie.</p>
-            <p style="margin-top: 24px;">Un cordial saludo,<br><strong>El equipo de Tramilex</strong></p>
+    subject = f"Tu codigo de acceso Tramilex: {pin}"
+    html_body = f"""
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <img src="https://tramilex.es/logo.png" alt="Tramilex" style="height: 50px; margin-bottom: 20px;" />
+        <h2 style="color: #0f172a; margin-bottom: 8px;">Tu codigo de acceso</h2>
+        <p>Hola <strong>{name}</strong>,</p>
+        <p>Tu codigo de acceso para ingresar a Tramilex es:</p>
+        <div style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 12px; padding: 24px; margin: 20px 0; text-align: center;">
+            <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #0f172a; font-family: monospace;">{pin}</span>
         </div>
-        """
-        msg.attach(MIMEText(body, "html"))
-        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
-        server.starttls()
-        server.login(settings["smtp_user"], settings["smtp_password"])
-        server.send_message(msg)
-        server.quit()
-        return True
-    except Exception as e:
-        logger.error(f"Error enviando PIN: {e}")
-        return False
+        <p style="color: #64748b; font-size: 13px;">Este codigo expira en <strong>5 minutos</strong>. No lo compartas con nadie.</p>
+        <p style="margin-top: 24px;">Un cordial saludo,<br><strong>El equipo de Tramilex</strong></p>
+    </div>
+    """
+    return _send_email(to_email, subject, html_body)
 
 
 @api_router.post("/auth/request-pin")
@@ -1505,6 +1541,29 @@ async def update_mailgun_settings(body: MailgunSettingsInput, user=Depends(requi
     return {"message": "Configuracion Mailgun actualizada"}
 
 
+# --- Resend Settings ---
+@api_router.get("/settings/resend")
+async def get_resend_settings(user=Depends(require_admin)):
+    s = await db.settings.find_one({"type": "resend"}, {"_id": 0})
+    if not s:
+        return {"type": "resend", "resend_api_key": "", "resend_from_email": ""}
+    if s.get("resend_api_key"):
+        s["resend_api_key"] = "********"
+    return s
+
+@api_router.put("/settings/resend")
+async def update_resend_settings(body: ResendSettingsInput, user=Depends(require_admin)):
+    doc = body.model_dump()
+    doc["type"] = "resend"
+    if doc["resend_api_key"] == "********":
+        existing = await db.settings.find_one({"type": "resend"})
+        if existing:
+            doc["resend_api_key"] = existing.get("resend_api_key", "")
+    await db.settings.update_one({"type": "resend"}, {"$set": doc}, upsert=True)
+    await log_audit("resend_updated", user["_id"], user.get("name", ""), {"from": doc["resend_from_email"]})
+    return {"message": "Configuracion Resend actualizada"}
+
+
 # --- Company Info Settings ---
 @api_router.get("/settings/company-info")
 async def get_company_info(user=Depends(require_admin)):
@@ -1812,11 +1871,6 @@ async def send_appointment_reminders(user=Depends(require_staff_or_admin)):
 
 def _send_appointment_reminder(appt):
     try:
-        settings = sync_db.settings.find_one({"type": "smtp"})
-        if not settings or not settings.get("smtp_host"):
-            logger.warning("SMTP not configured for reminders")
-            return
-
         date_str = appt.get("date", "")
         time_str = appt.get("time", "")
         name = f"{appt.get('first_name', '')} {appt.get('last_name', '')}"
@@ -1837,41 +1891,26 @@ def _send_appointment_reminder(appt):
             <p style="margin-top: 24px;">Un cordial saludo,<br><strong>El equipo de Tramilex</strong></p>
         </div>
         """
-
-        # Send to client
-        msg = MIMEMultipart()
-        msg["From"] = settings["from_email"]
-        msg["To"] = appt["email"]
-        msg["Subject"] = "Recordatorio de Cita - Tramilex"
-        msg.attach(MIMEText(reminder_body, "html"))
-
-        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
-        server.starttls()
-        server.login(settings["smtp_user"], settings["smtp_password"])
-        server.send_message(msg)
+        _send_email(appt["email"], "Recordatorio de Cita - Tramilex", reminder_body)
 
         # Also send to admin
-        admin_body = f"""
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-            <h2 style="color: #0f172a;">Recordatorio - Cita Manana</h2>
-            <p>Tiene una cita programada para manana con:</p>
-            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 16px 0;">
-                <p style="margin: 4px 0;"><strong>Cliente:</strong> {name}</p>
-                <p style="margin: 4px 0;"><strong>Email:</strong> {appt.get('email', '')}</p>
-                <p style="margin: 4px 0;"><strong>Telefono:</strong> {appt.get('phone', '')}</p>
-                <p style="margin: 4px 0;"><strong>Fecha:</strong> {date_str}</p>
-                <p style="margin: 4px 0;"><strong>Hora:</strong> {time_str}</p>
-                <p style="margin: 4px 0;"><strong>Lugar:</strong> {office}</p>
+        notify = _get_notify_email()
+        if notify:
+            admin_body = f"""
+            <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+                <h2 style="color: #0f172a;">Recordatorio - Cita Manana</h2>
+                <p>Tiene una cita programada para manana con:</p>
+                <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin: 16px 0;">
+                    <p style="margin: 4px 0;"><strong>Cliente:</strong> {name}</p>
+                    <p style="margin: 4px 0;"><strong>Email:</strong> {appt.get('email', '')}</p>
+                    <p style="margin: 4px 0;"><strong>Telefono:</strong> {appt.get('phone', '')}</p>
+                    <p style="margin: 4px 0;"><strong>Fecha:</strong> {date_str}</p>
+                    <p style="margin: 4px 0;"><strong>Hora:</strong> {time_str}</p>
+                    <p style="margin: 4px 0;"><strong>Lugar:</strong> {office}</p>
+                </div>
             </div>
-        </div>
-        """
-        admin_msg = MIMEMultipart()
-        admin_msg["From"] = settings["from_email"]
-        admin_msg["To"] = settings.get("notify_email", settings["from_email"])
-        admin_msg["Subject"] = f"Recordatorio - Cita manana con {name}"
-        admin_msg.attach(MIMEText(admin_body, "html"))
-        server.send_message(admin_msg)
-        server.quit()
+            """
+            _send_email(notify, f"Recordatorio - Cita manana con {name}", admin_body)
 
         logger.info(f"Reminder sent for appointment {appt.get('date')} {appt.get('time')} - {name}")
     except Exception as e:
@@ -1881,21 +1920,9 @@ def _send_appointment_reminder(appt):
 # --- Email notification (background task) ---
 def send_upload_notification(user_data: dict, filename: str):
     try:
-        import pymongo
-        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
-        sync_db = sync_client[os.environ['DB_NAME']]
-        settings = sync_db.settings.find_one({"type": "smtp"})
-        sync_client.close()
-
-        if not settings or not settings.get("smtp_host"):
-            logger.info("SMTP no configurado, notificacion omitida")
+        notify = _get_notify_email()
+        if not notify:
             return
-
-        msg = MIMEMultipart()
-        msg["From"] = settings["from_email"]
-        msg["To"] = settings.get("notify_email", settings["from_email"])
-        msg["Subject"] = f"Nuevo documento - {user_data.get('name', 'Cliente')}"
-
         body = f"""
         <h2>Nuevo documento subido</h2>
         <p><strong>{user_data.get('name', 'Cliente')}</strong>
@@ -1904,14 +1931,7 @@ def send_upload_notification(user_data: dict, filename: str):
         <p><strong>Archivo:</strong> {filename}</p>
         <p><strong>Fecha:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}</p>
         """
-        msg.attach(MIMEText(body, "html"))
-
-        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
-        server.starttls()
-        server.login(settings["smtp_user"], settings["smtp_password"])
-        server.send_message(msg)
-        server.quit()
-        logger.info(f"Notificacion enviada por documento de {user_data.get('name')}")
+        _send_email(notify, f"Nuevo documento - {user_data.get('name', 'Cliente')}", body)
     except Exception as e:
         logger.error(f"Error enviando notificacion: {e}")
 
@@ -1919,31 +1939,13 @@ def send_upload_notification(user_data: dict, filename: str):
 # --- Client notification (when admin uploads) ---
 def send_client_notification(client_email: str, client_name: str, filename: str, category: str):
     try:
-        import pymongo
-        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
-        sync_db = sync_client[os.environ['DB_NAME']]
-        settings = sync_db.settings.find_one({"type": "smtp"})
-        sync_client.close()
-
-        if not settings or not settings.get("smtp_host"):
-            logger.info("SMTP no configurado, notificacion al cliente omitida")
-            return
-
         if not client_email:
-            logger.info("Cliente sin email, notificacion omitida")
             return
-
         category_labels = {
             "identificacion": "Identificacion", "residencia": "Residencia",
             "trabajo": "Trabajo", "resolucion": "Resolucion",
             "contrato": "Contrato", "fiscal": "Fiscal", "otros": "Otros"
         }
-
-        msg = MIMEMultipart()
-        msg["From"] = settings["from_email"]
-        msg["To"] = client_email
-        msg["Subject"] = f"Tramilex - Nuevo documento en tu expediente"
-
         body = f"""
         <h2>Nuevo documento disponible</h2>
         <p>Hola <strong>{client_name}</strong>,</p>
@@ -1951,19 +1953,10 @@ def send_client_notification(client_email: str, client_name: str, filename: str,
         <p><strong>Archivo:</strong> {filename}</p>
         <p><strong>Categoria:</strong> {category_labels.get(category, category)}</p>
         <p><strong>Fecha:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}</p>
-        <br>
-        <p>Ingresa a tu cuenta de Tramilex para revisar y descargar el documento.</p>
-        <br>
-        <p>Saludos,<br>Equipo Tramilex</p>
+        <br><p>Ingresa a tu cuenta de Tramilex para revisar y descargar el documento.</p>
+        <br><p>Saludos,<br>Equipo Tramilex</p>
         """
-        msg.attach(MIMEText(body, "html"))
-
-        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
-        server.starttls()
-        server.login(settings["smtp_user"], settings["smtp_password"])
-        server.send_message(msg)
-        server.quit()
-        logger.info(f"Notificacion enviada al cliente {client_name} ({client_email})")
+        _send_email(client_email, "Tramilex - Nuevo documento en tu expediente", body)
     except Exception as e:
         logger.error(f"Error enviando notificacion al cliente: {e}")
 
@@ -1971,27 +1964,9 @@ def send_client_notification(client_email: str, client_name: str, filename: str,
 # --- Status change notification to client ---
 def send_status_notification(client_email: str, client_name: str, filename: str, new_status: str):
     try:
-        import pymongo
-        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
-        sync_db = sync_client[os.environ['DB_NAME']]
-        settings = sync_db.settings.find_one({"type": "smtp"})
-        sync_client.close()
-
-        if not settings or not settings.get("smtp_host"):
-            logger.info("SMTP no configurado, notificacion de estado omitida")
-            return
-
         if not client_email:
-            logger.info("Cliente sin email, notificacion de estado omitida")
             return
-
         status_label = "Revisado" if new_status == "reviewed" else "Pendiente de revision"
-
-        msg = MIMEMultipart()
-        msg["From"] = settings["from_email"]
-        msg["To"] = client_email
-        msg["Subject"] = f"Tramilex - Tu documento ha sido revisado"
-
         body = f"""
         <h2>Documento revisado</h2>
         <p>Hola <strong>{client_name}</strong>,</p>
@@ -1999,19 +1974,10 @@ def send_status_notification(client_email: str, client_name: str, filename: str,
         <p><strong>Archivo:</strong> {filename}</p>
         <p><strong>Nuevo estado:</strong> {status_label}</p>
         <p><strong>Fecha:</strong> {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M UTC')}</p>
-        <br>
-        <p>Ingresa a tu cuenta de Tramilex para mas detalles.</p>
-        <br>
-        <p>Saludos,<br>Equipo Tramilex</p>
+        <br><p>Ingresa a tu cuenta de Tramilex para mas detalles.</p>
+        <br><p>Saludos,<br>Equipo Tramilex</p>
         """
-        msg.attach(MIMEText(body, "html"))
-
-        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
-        server.starttls()
-        server.login(settings["smtp_user"], settings["smtp_password"])
-        server.send_message(msg)
-        server.quit()
-        logger.info(f"Notificacion de estado enviada a {client_name} ({client_email})")
+        _send_email(client_email, "Tramilex - Tu documento ha sido revisado", body)
     except Exception as e:
         logger.error(f"Error enviando notificacion de estado: {e}")
 
@@ -2019,21 +1985,6 @@ def send_status_notification(client_email: str, client_name: str, filename: str,
 # --- Admin email to client ---
 def send_admin_email_to_client(client_email: str, client_name: str, message: str):
     try:
-        import pymongo
-        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
-        sync_db = sync_client[os.environ['DB_NAME']]
-        settings = sync_db.settings.find_one({"type": "smtp"})
-        sync_client.close()
-
-        if not settings or not settings.get("smtp_host"):
-            logger.info("SMTP no configurado, email al cliente omitido")
-            return
-
-        msg = MIMEMultipart()
-        msg["From"] = settings["from_email"]
-        msg["To"] = client_email
-        msg["Subject"] = "Nueva notificacion de Tramilex"
-
         body = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #0f172a;">Nueva notificacion de Tramilex</h2>
@@ -2047,14 +1998,7 @@ def send_admin_email_to_client(client_email: str, client_name: str, message: str
             </p>
         </div>
         """
-        msg.attach(MIMEText(body, "html"))
-
-        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
-        server.starttls()
-        server.login(settings["smtp_user"], settings["smtp_password"])
-        server.send_message(msg)
-        server.quit()
-        logger.info(f"Email enviado a {client_name} ({client_email})")
+        _send_email(client_email, "Nueva notificacion de Tramilex", body)
     except Exception as e:
         logger.error(f"Error enviando email al cliente: {e}")
 
@@ -2062,21 +2006,6 @@ def send_admin_email_to_client(client_email: str, client_name: str, message: str
 # --- Company credentials email (background task) ---
 def send_company_credentials_email(to_email: str, company_name: str, cif_nif: str, password: str):
     try:
-        import pymongo
-        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
-        sync_db = sync_client[os.environ['DB_NAME']]
-        settings = sync_db.settings.find_one({"type": "smtp"})
-        sync_client.close()
-
-        if not settings or not settings.get("smtp_host"):
-            logger.info("SMTP no configurado, credenciales no enviadas")
-            return
-
-        msg = MIMEMultipart()
-        msg["From"] = settings["from_email"]
-        msg["To"] = to_email
-        msg["Subject"] = f"Tramilex - Credenciales de acceso para {company_name}"
-
         body = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #0f172a;">Bienvenido a Tramilex</h2>
@@ -2093,15 +2022,7 @@ def send_company_credentials_email(to_email: str, company_name: str, cif_nif: st
             </p>
         </div>
         """
-        msg.attach(MIMEText(body, "html"))
-
-        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
-        server.starttls()
-        server.login(settings["smtp_user"], settings["smtp_password"])
-        server.send_message(msg)
-        server.quit()
-        logger.info(f"Credenciales enviadas a {to_email} para {company_name}")
-        return True
+        return _send_email(to_email, f"Tramilex - Credenciales de acceso para {company_name}", body)
     except Exception as e:
         logger.error(f"Error enviando credenciales: {e}")
         return False
@@ -2941,23 +2862,8 @@ async def get_all_signed_documents(user=Depends(require_staff_or_admin)):
 # --- Task email notification ---
 def send_task_email(to_email, to_name, task_title, from_name, priority, description):
     try:
-        import pymongo
-        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
-        sync_db = sync_client[os.environ['DB_NAME']]
-        settings = sync_db.settings.find_one({"type": "smtp"})
-        sync_client.close()
-
-        if not settings or not settings.get("smtp_host"):
-            return
-
         priority_colors = {"alta": "#ef4444", "media": "#f59e0b", "baja": "#94a3b8"}
         color = priority_colors.get(priority, "#94a3b8")
-
-        msg = MIMEMultipart()
-        msg["From"] = settings["from_email"]
-        msg["To"] = to_email
-        msg["Subject"] = f"Tramilex - Nueva tarea asignada: {task_title}"
-
         body = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #0f172a;">Te han asignado una tarea</h2>
@@ -2971,30 +2877,13 @@ def send_task_email(to_email, to_name, task_title, from_name, priority, descript
             <p>Accede a la plataforma para ver los detalles: <a href="https://tramilex.goroky.es/admin/tareas">Ver tareas</a></p>
         </div>
         """
-        msg.attach(MIMEText(body, "html"))
-
-        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
-        server.starttls()
-        server.login(settings["smtp_user"], settings["smtp_password"])
-        server.send_message(msg)
-        server.quit()
+        _send_email(to_email, f"Tramilex - Nueva tarea asignada: {task_title}", body)
     except Exception as e:
         logger.error(f"Error enviando email de tarea: {e}")
 
 
 def send_welcome_email(to_email, name):
     try:
-        import pymongo
-        sync_client = pymongo.MongoClient(os.environ['MONGO_URL'])
-        sync_db = sync_client[os.environ['DB_NAME']]
-        settings = sync_db.settings.find_one({"type": "smtp"})
-        sync_client.close()
-        if not settings or not settings.get("smtp_host"):
-            return
-        msg = MIMEMultipart()
-        msg["From"] = settings["from_email"]
-        msg["To"] = to_email
-        msg["Subject"] = "Bienvenido a Tramilex"
         body = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
             <h2 style="color: #0f172a;">Bienvenido a Tramilex!</h2>
@@ -3010,27 +2899,13 @@ def send_welcome_email(to_email, name):
             <p style="margin-top: 24px;">Un cordial saludo,<br><strong>El equipo de Tramilex</strong></p>
         </div>
         """
-        msg.attach(MIMEText(body, "html"))
-        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
-        server.starttls()
-        server.login(settings["smtp_user"], settings["smtp_password"])
-        server.send_message(msg)
-        server.quit()
-        logger.info(f"Welcome email sent to {to_email}")
+        _send_email(to_email, "Bienvenido a Tramilex", body)
     except Exception as e:
         logger.error(f"Error enviando welcome email: {e}")
 
 
 def _send_staff_welcome_email(to_email, name, temp_password):
     try:
-        settings = sync_db.settings.find_one({"type": "smtp"})
-        if not settings or not settings.get("smtp_host"):
-            logger.warning("SMTP not configured, skipping staff welcome email")
-            return
-        msg = MIMEMultipart()
-        msg["From"] = settings["from_email"]
-        msg["To"] = to_email
-        msg["Subject"] = "Bienvenido al equipo Tramilex"
         body = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <h2 style="color: #0f172a;">Bienvenido al equipo Tramilex!</h2>
@@ -3048,13 +2923,7 @@ def _send_staff_welcome_email(to_email, name, temp_password):
             <p style="margin-top: 24px;">Un cordial saludo,<br><strong>El equipo de Tramilex</strong></p>
         </div>
         """
-        msg.attach(MIMEText(body, "html"))
-        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
-        server.starttls()
-        server.login(settings["smtp_user"], settings["smtp_password"])
-        server.send_message(msg)
-        server.quit()
-        logger.info(f"Staff welcome email sent to {to_email}")
+        _send_email(to_email, "Bienvenido al equipo Tramilex", body)
     except Exception as e:
         logger.error(f"Error enviando staff welcome email: {e}")
 
@@ -4262,21 +4131,10 @@ async def stripe_webhook(request: Request):
 
 def _send_appointment_confirmation_email(appt):
     try:
-        settings = sync_db.settings.find_one({"type": "smtp"})
-        if not settings or not settings.get("smtp_host"):
-            logger.warning("SMTP not configured, skipping appointment confirmation email")
-            return
-
-        msg = MIMEMultipart()
-        msg["From"] = settings["from_email"]
-        msg["To"] = appt["email"]
-        msg["Subject"] = "Cita Confirmada - Tramilex"
-
         office_name = appt.get("office", "")
         office_detail = appt.get("office_detail", "")
         date_str = appt.get("date", "")
         time_str = appt.get("time", "")
-
         body = f"""
         <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <h2 style="color: #0f172a;">Cita Confirmada</h2>
@@ -4292,13 +4150,7 @@ def _send_appointment_confirmation_email(appt):
             <p style="margin-top: 24px;">Un cordial saludo,<br><strong>El equipo de Tramilex</strong></p>
         </div>
         """
-        msg.attach(MIMEText(body, "html"))
-        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
-        server.starttls()
-        server.login(settings["smtp_user"], settings["smtp_password"])
-        server.send_message(msg)
-        server.quit()
-        logger.info(f"Appointment confirmation email sent to {appt['email']}")
+        _send_email(appt["email"], "Cita Confirmada - Tramilex", body)
     except Exception as e:
         logger.error(f"Error enviando email de confirmacion de cita: {e}")
 

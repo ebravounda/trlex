@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { toast } from 'sonner';
 import {
   Settings, Save, Mail, Server, Lock, User, KeyRound, Building2, Phone,
-  CreditCard, Globe, ChevronDown, ChevronUp
+  CreditCard, Globe, ChevronDown, ChevronUp, Send
 } from 'lucide-react';
 
 function Section({ icon: Icon, title, desc, children, defaultOpen = false }) {
@@ -32,24 +32,28 @@ function Section({ icon: Icon, title, desc, children, defaultOpen = false }) {
 export default function AdminSettings() {
   const [smtp, setSmtp] = useState({ smtp_host: '', smtp_port: 587, smtp_user: '', smtp_password: '', from_email: '', notify_email: '' });
   const [mailgun, setMailgun] = useState({ mailgun_domain: '', mailgun_api_key: '', mailgun_from_email: '' });
+  const [resendCfg, setResendCfg] = useState({ resend_api_key: '', resend_from_email: '' });
   const [company, setCompany] = useState({ company_name: 'Tramilex', company_email: 'info@tramilex.es', phone_spain: '', phone_chile: '', phone_mexico: '', phone_peru: '', iban: '', bank_name_eu: '', cuenta_chile: '', bank_name_chile: '', extra_payment_info: '' });
   const [pwForm, setPwForm] = useState({ current_password: '', new_password: '', confirm_password: '' });
 
   const [savingSmtp, setSavingSmtp] = useState(false);
   const [savingMailgun, setSavingMailgun] = useState(false);
+  const [savingResend, setSavingResend] = useState(false);
   const [savingCompany, setSavingCompany] = useState(false);
   const [changingPw, setChangingPw] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const fetchAll = useCallback(async () => {
     try {
-      const [smtpRes, mailgunRes, companyRes] = await Promise.all([
+      const [smtpRes, mailgunRes, resendRes, companyRes] = await Promise.all([
         api.get('/settings/smtp'),
         api.get('/settings/mailgun'),
+        api.get('/settings/resend'),
         api.get('/settings/company-info'),
       ]);
       setSmtp(s => ({ ...s, ...smtpRes.data }));
       setMailgun(m => ({ ...m, ...mailgunRes.data }));
+      setResendCfg(r => ({ ...r, ...resendRes.data }));
       setCompany(c => ({ ...c, ...companyRes.data }));
     } catch {}
     setLoading(false);
@@ -69,6 +73,13 @@ export default function AdminSettings() {
     setSavingMailgun(true);
     try { await api.put('/settings/mailgun', mailgun); toast.success('Mailgun guardado'); } catch { toast.error('Error'); }
     setSavingMailgun(false);
+  };
+
+  const handleSaveResend = async (e) => {
+    e.preventDefault();
+    setSavingResend(true);
+    try { await api.put('/settings/resend', resendCfg); toast.success('Resend guardado'); } catch { toast.error('Error'); }
+    setSavingResend(false);
   };
 
   const handleSaveCompany = async (e) => {
@@ -99,6 +110,20 @@ export default function AdminSettings() {
         <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1">Sistema</p>
         <h1 className="text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>Configuracion</h1>
       </div>
+
+      {/* Resend (Priority) */}
+      <Section icon={Send} title="Resend" desc="API de correos transaccionales (prioridad sobre SMTP)" defaultOpen={true}>
+        <form onSubmit={handleSaveResend} className="space-y-4 mt-3">
+          <p className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Si Resend esta configurado, se usara como metodo principal de envio. SMTP sera el respaldo.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <div><Label className="text-xs text-slate-600">API Key *</Label><Input type="password" value={resendCfg.resend_api_key} onChange={e => setResendCfg({...resendCfg, resend_api_key: e.target.value})} placeholder="re_..." className="mt-1 h-9" data-testid="resend-api-key-input" /></div>
+            <div><Label className="text-xs text-slate-600">Email remitente *</Label><Input value={resendCfg.resend_from_email} onChange={e => setResendCfg({...resendCfg, resend_from_email: e.target.value})} placeholder="noreply@tudominio.com" className="mt-1 h-9" data-testid="resend-from-email-input" /></div>
+          </div>
+          <Button type="submit" disabled={savingResend} className="h-9 bg-slate-900 hover:bg-slate-800 gap-2 text-xs" data-testid="save-resend-btn">
+            <Save className="w-3.5 h-3.5" /> {savingResend ? 'Guardando...' : 'Guardar Resend'}
+          </Button>
+        </form>
+      </Section>
 
       {/* SMTP */}
       <Section icon={Server} title="Servidor SMTP" desc="Correo para notificaciones del sistema" defaultOpen={true}>
