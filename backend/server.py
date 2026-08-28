@@ -98,12 +98,13 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 
 # --- JWT helpers ---
-def create_access_token(user_id: str, email: str, role: str) -> str:
+def create_access_token(user_id: str, email: str, role: str, keep_session: bool = False) -> str:
+    exp = timedelta(days=30) if keep_session else timedelta(hours=24)
     payload = {
         "sub": user_id,
         "email": email,
         "role": role,
-        "exp": datetime.now(timezone.utc) + timedelta(hours=24),
+        "exp": datetime.now(timezone.utc) + exp,
         "type": "access"
     }
     return jwt.encode(payload, JWT_SECRET, algorithm=JWT_ALGORITHM)
@@ -192,6 +193,19 @@ api_router = APIRouter(prefix="/api")
 class LoginInput(BaseModel):
     email: str
     password: str
+    keep_session: bool = False
+
+
+class PinRequestInput(BaseModel):
+    email: str
+    login_type: str = "client"
+
+
+class PinVerifyInput(BaseModel):
+    email: str
+    pin: str
+    login_type: str = "client"
+    keep_session: bool = False
 
 
 class RegisterInput(BaseModel):
@@ -481,9 +495,11 @@ async def login(input_data: LoginInput):
     user = await db.users.find_one({"email": email})
     if not user or not verify_password(input_data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Email o contrasena incorrectos")
+    if user.get("role") not in ("admin",):
+        raise HTTPException(status_code=401, detail="Use PIN para acceder")
 
     user_id = str(user["_id"])
-    token = create_access_token(user_id, email, user.get("role", "client"))
+    token = create_access_token(user_id, email, user.get("role", "client"), input_data.keep_session)
 
     return {
         "id": user_id,
@@ -494,6 +510,128 @@ async def login(input_data: LoginInput):
         "tutorial_seen": user.get("tutorial_seen", False),
         "token": token
     }
+
+
+def _generate_pin():
+    import random
+    return str(random.randint(100000, 999999))
+
+
+def _send_pin_email(to_email, name, pin):
+    try:
+        settings = sync_db.settings.find_one({"type": "smtp"})
+        if not settings or not settings.get("smtp_host"):
+            logger.warning("SMTP not configured for PIN")
+            return False
+        msg = MIMEMultipart()
+        msg["From"] = settings["from_email"]
+        msg["To"] = to_email
+        msg["Subject"] = f"Tu codigo de acceso Tramilex: {pin}"
+        body = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <img src="https://tramilex.es/logo.png" alt="Tramilex" style="height: 50px; margin-bottom: 20px;" />
+            <h2 style="color: #0f172a; margin-bottom: 8px;">Tu codigo de acceso</h2>
+            <p>Hola <strong>{name}</strong>,</p>
+            <p>Tu codigo de acceso para ingresar a Tramilex es:</p>
+            <div style="background: #f8fafc; border: 2px solid #e2e8f0; border-radius: 12px; padding: 24px; margin: 20px 0; text-align: center;">
+                <span style="font-size: 36px; font-weight: bold; letter-spacing: 8px; color: #0f172a; font-family: monospace;">{pin}</span>
+            </div>
+            <p style="color: #64748b; font-size: 13px;">Este codigo expira en <strong>5 minutos</strong>. No lo compartas con nadie.</p>
+            <p style="margin-top: 24px;">Un cordial saludo,<br><strong>El equipo de Tramilex</strong></p>
+        </div>
+        """
+        msg.attach(MIMEText(body, "html"))
+        server = smtplib.SMTP(settings["smtp_host"], settings["smtp_port"])
+        server.starttls()
+        server.login(settings["smtp_user"], settings["smtp_password"])
+        server.send_message(msg)
+        server.quit()
+        return True
+    except Exception as e:
+        logger.error(f"Error enviando PIN: {e}")
+        return False
+
+
+@api_router.post("/auth/request-pin")
+async def request_pin(body: PinRequestInput):
+    email = body.email.lower().strip()
+
+    # Auto-detect: first check users, then companies
+    name = ""
+    login_type = "client"
+    user = await db.users.find_one({"email": email})
+    if user:
+        if user.get("role") == "admin":
+            raise HTTPException(status_code=400, detail="Administradores deben usar contrasena")
+        name = user.get("name", "")
+        email_to = email
+        login_type = "user"
+    else:
+        entity = await db.companies.find_one({"email": email})
+        if entity:
+            name = entity.get("name", "")
+            email_to = entity.get("email", email)
+            login_type = "company"
+        else:
+            raise HTTPException(status_code=404, detail="No se encontro una cuenta con ese email")
+
+    pin = _generate_pin()
+    await db.auth_pins.delete_many({"email": email_to})
+    await db.auth_pins.insert_one({
+        "email": email_to,
+        "identifier": email_to,
+        "pin": pin,
+        "login_type": login_type,
+        "created_at": datetime.now(timezone.utc),
+        "expires_at": datetime.now(timezone.utc) + timedelta(minutes=5),
+    })
+
+    sent = _send_pin_email(email_to, name, pin)
+    if not sent:
+        raise HTTPException(status_code=500, detail="Error enviando el codigo. Verifica la configuracion SMTP.")
+
+    masked = email_to[:3] + "***" + email_to[email_to.index("@"):] if "@" in email_to else "***"
+    return {"message": f"Codigo enviado a {masked}", "email_sent": True}
+
+
+@api_router.post("/auth/verify-pin")
+async def verify_pin(body: PinVerifyInput):
+    email = body.email.lower().strip()
+
+    record = await db.auth_pins.find_one({
+        "identifier": email,
+        "pin": body.pin,
+        "expires_at": {"$gt": datetime.now(timezone.utc)}
+    })
+    if not record:
+        raise HTTPException(status_code=401, detail="Codigo incorrecto o expirado")
+
+    await db.auth_pins.delete_many({"identifier": email})
+    detected_type = record.get("login_type", "user")
+
+    if detected_type == "company":
+        entity = await db.companies.find_one({"email": email})
+        if not entity:
+            raise HTTPException(status_code=404, detail="Empresa no encontrada")
+        eid = str(entity["_id"])
+        token = create_access_token(eid, entity.get("email", ""), "company", body.keep_session)
+        return {
+            "id": eid, "name": entity.get("name", ""), "email": entity.get("email", ""),
+            "cif_nif": entity.get("cif_nif", ""), "role": "company",
+            "tutorial_seen": entity.get("tutorial_seen", False), "token": token
+        }
+    else:
+        user = await db.users.find_one({"email": email})
+        if not user:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        uid = str(user["_id"])
+        token = create_access_token(uid, email, user.get("role", "client"), body.keep_session)
+        return {
+            "id": uid, "email": email, "name": user.get("name", ""),
+            "role": user.get("role", "client"),
+            "must_change_password": user.get("must_change_password", False),
+            "tutorial_seen": user.get("tutorial_seen", False), "token": token
+        }
 
 
 @api_router.post("/auth/logout")
@@ -4332,6 +4470,10 @@ async def chatbot_message(body: ChatMessageInput, user=Depends(get_current_user)
 @app.on_event("startup")
 async def startup():
     await db.users.create_index("email", unique=True)
+    try:
+        await db.auth_pins.create_index("expires_at", expireAfterSeconds=0)
+    except Exception:
+        pass
     await db.companies.create_index("cif_nif", unique=True)
 
     # Seed main admin
