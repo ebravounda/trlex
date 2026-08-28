@@ -51,7 +51,8 @@ echo "[5/5] Ajustando permisos y reiniciando..."
 chown -R $PLESK_USER:$PLESK_GROUP "$DEPLOY_DIR/"
 chmod -R 755 "$DEPLOY_DIR/"
 
-# Reiniciar backend
+# Clear Python cache and restart backend
+rm -rf "$DEPLOY_DIR/backend/__pycache__"
 kill $(pgrep -f "tramilex.goroky.es.*uvicorn") 2>/dev/null || true
 sleep 2
 cd "$DEPLOY_DIR/backend"
