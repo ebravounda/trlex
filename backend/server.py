@@ -1493,6 +1493,96 @@ async def send_email_to_client(client_id: str, body: SendEmailInput, background_
     return {"message": "Email enviado correctamente"}
 
 
+
+# --- PDF Compressor ---
+@api_router.post("/compress-pdf")
+async def compress_pdf(
+    file: UploadFile = File(...),
+    target_mb: float = Form(2.0),
+    user=Depends(require_staff_or_admin)
+):
+    import pymupdf
+    from PIL import Image
+
+    if not file.filename.lower().endswith('.pdf'):
+        raise HTTPException(status_code=400, detail="Solo se aceptan archivos PDF")
+
+    content = await file.read()
+    original_size = len(content)
+    target_bytes = int(target_mb * 1024 * 1024)
+
+    if original_size <= target_bytes:
+        return StreamingResponse(
+            io.BytesIO(content),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f'attachment; filename="comprimido_{file.filename}"',
+                      "X-Original-Size": str(original_size),
+                      "X-Compressed-Size": str(original_size),
+                      "X-Already-Small": "true"}
+        )
+
+    try:
+        best_result = None
+
+        for dpi in [150, 120, 100, 80, 60, 45]:
+            for quality in [75, 50, 35, 20]:
+                doc = pymupdf.open(stream=content, filetype="pdf")
+                new_doc = pymupdf.open()
+
+                for page in doc:
+                    pix = page.get_pixmap(dpi=dpi)
+                    img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+                    img_buffer = io.BytesIO()
+                    img.save(img_buffer, format="JPEG", quality=quality, optimize=True)
+                    img_buffer.seek(0)
+
+                    img_rect = pymupdf.Rect(0, 0, page.rect.width, page.rect.height)
+                    new_page = new_doc.new_page(width=page.rect.width, height=page.rect.height)
+                    new_page.insert_image(img_rect, stream=img_buffer.read())
+
+                output = io.BytesIO()
+                new_doc.save(output, garbage=4, deflate=True)
+                new_doc.close()
+                doc.close()
+
+                compressed_size = output.tell()
+                output.seek(0)
+
+                if compressed_size <= target_bytes:
+                    logger.info(f"PDF comprimido: {original_size} -> {compressed_size} bytes (dpi={dpi}, q={quality})")
+                    return StreamingResponse(
+                        output,
+                        media_type="application/pdf",
+                        headers={"Content-Disposition": f'attachment; filename="comprimido_{file.filename}"',
+                                  "X-Original-Size": str(original_size),
+                                  "X-Compressed-Size": str(compressed_size)}
+                    )
+
+                if best_result is None or compressed_size < best_result[0]:
+                    best_result = (compressed_size, output)
+
+        # Return best attempt even if over target
+        if best_result:
+            best_result[1].seek(0)
+            logger.warning(f"PDF no alcanzo meta: {original_size} -> {best_result[0]} bytes (meta: {target_bytes})")
+            return StreamingResponse(
+                best_result[1],
+                media_type="application/pdf",
+                headers={"Content-Disposition": f'attachment; filename="comprimido_{file.filename}"',
+                          "X-Original-Size": str(original_size),
+                          "X-Compressed-Size": str(best_result[0]),
+                          "X-Over-Target": "true"}
+            )
+
+        raise HTTPException(status_code=500, detail="No se pudo comprimir el PDF")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error comprimiendo PDF: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al comprimir: {str(e)}")
+
+
 # --- Settings Routes ---
 @api_router.get("/settings/smtp")
 async def get_smtp_settings(user=Depends(require_admin)):

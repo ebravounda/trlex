@@ -1,6 +1,6 @@
 # Tramilex - PRD
 
-## Stack: React + FastAPI + MongoDB + Emergent Object Storage + Groq (Chatbot) + Stripe (Payments) + ReportLab (PDF) + Resend (Email)
+## Stack: React + FastAPI + MongoDB + Emergent Object Storage + Groq (Chatbot) + Stripe (Payments) + ReportLab (PDF) + Resend (Email) + PyMuPDF (PDF Compression)
 
 ## Funcionalidades Implementadas
 - Auth JWT (clientes, admin, empresas, staff)
@@ -9,6 +9,7 @@
 - **Acceso Administrador** como link discreto (admins usan email + contrasena)
 - **Resend API** como metodo principal de email, SMTP como fallback
 - **Funcion universal _send_email()** — todas las funciones de correo usan Resend primero, SMTP despues
+- **Compresor PDF** — Admin/Staff suben PDF, eligen limite (2MB/4MB), descargan comprimido (PyMuPDF + Pillow)
 - Dashboard Cliente con requisitos colapsables en movil
 - Dashboard Admin completo con saludo por hora
 - Modulo Empresas (CRUD, trabajadores, documentos, tramites, credenciales, firma)
@@ -37,12 +38,14 @@ users, documents, companies, company_workers, company_documents, company_tramite
 - Groq API (Chatbot LLM - qwen/qwen3.6-27b)
 - Stripe (Appointment payments - Sandbox)
 - ReportLab (PDF generation)
+- PyMuPDF + Pillow (PDF compression)
 
-## Key API Endpoints (Auth)
-- POST /api/auth/request-pin — Auto-detecta usuario vs empresa por email, envia PIN de 6 digitos
-- POST /api/auth/verify-pin — Verifica PIN, retorna token JWT (30d si keep_session)
-- POST /api/auth/login — Login tradicional con contrasena (admins/staff)
+## Key API Endpoints
+- POST /api/auth/request-pin — Auto-detecta usuario vs empresa por email
+- POST /api/auth/verify-pin — Verifica PIN, retorna token JWT
+- POST /api/auth/login — Login con contrasena (admins/staff)
 - GET/PUT /api/settings/resend — Configuracion Resend API
+- POST /api/compress-pdf — Comprime PDF a tamano objetivo (2MB/4MB)
 
 ## Deployment
 - Produccion: Plesk en tramilex.goroky.es (SSH deploy via git pull)

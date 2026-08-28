@@ -8,6 +8,7 @@ import AdminClients from '@/pages/AdminClients';
 import AdminClientDetail from '@/pages/AdminClientDetail';
 import AdminSettings from '@/pages/AdminSettings';
 import AdminAudit from '@/pages/AdminAudit';
+import AdminCompresor from '@/pages/AdminCompresor';
 import AdminTramites from '@/pages/AdminTramites';
 import AdminEmail from '@/pages/AdminEmail';
 import AdminEmpresas from '@/pages/AdminEmpresas';
@@ -89,6 +90,7 @@ function AppRoutes() {
         <Route path="tramites" element={<AdminTramites />} />
         <Route path="email" element={<AdminEmail />} />
         <Route path="audit" element={<AdminAudit />} />
+        <Route path="compresor" element={<AdminCompresor />} />
         <Route path="settings" element={<AdminSettings />} />
       </Route>
       <Route

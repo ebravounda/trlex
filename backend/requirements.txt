@@ -12,3 +12,6 @@ stripe
 reportlab
 groq
 aiohttp
+resend
+PyMuPDF
+Pillow
