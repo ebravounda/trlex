@@ -8,8 +8,10 @@ import { toast } from 'sonner';
 import EmojiPicker from 'emoji-picker-react';
 import {
   Send, Smile, Paperclip, Users, Plus, MessageCircle, Image as ImageIcon,
-  FileText, X, ArrowLeft, Hash, User, Download
+  FileText, X, ArrowLeft, Hash, User, Download, ListTodo, Calendar, Flag
 } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 
 function timeAgo(iso) {
   if (!iso) return '';
@@ -38,6 +40,8 @@ export default function AdminTeamChat() {
   const [groupName, setGroupName] = useState('');
   const [selectedMembers, setSelectedMembers] = useState([]);
   const [uploading, setUploading] = useState(false);
+  const [showTaskDialog, setShowTaskDialog] = useState(false);
+  const [taskForm, setTaskForm] = useState({ title: '', description: '', priority: 'media', due_date: '', assigned_to: '' });
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const pollRef = useRef(null);
@@ -137,6 +141,40 @@ export default function AdminTeamChat() {
       fetchConversations();
       setActiveConv(res.data.id);
     } catch {}
+  };
+
+  const openTaskDialog = () => {
+    const otherMember = activeConvData?.type === 'private'
+      ? Object.keys(activeConvData?.member_names || {}).find(id => id !== userId) || ''
+      : '';
+    setTaskForm({ title: '', description: '', priority: 'media', due_date: '', assigned_to: otherMember });
+    setShowTaskDialog(true);
+  };
+
+  const handleCreateTask = async () => {
+    if (!taskForm.title.trim()) { toast.error('Titulo requerido'); return; }
+    if (!taskForm.assigned_to) { toast.error('Selecciona a quien asignar'); return; }
+    try {
+      await api.post('/tasks', {
+        title: taskForm.title,
+        description: taskForm.description,
+        priority: taskForm.priority,
+        due_date: taskForm.due_date,
+        assigned_to: taskForm.assigned_to,
+      });
+      const assignedName = staffList.find(s => s.id === taskForm.assigned_to)?.name || 
+        activeConvData?.member_names?.[taskForm.assigned_to] || 'usuario';
+      if (activeConv) {
+        await api.post(`/team-chat/conversations/${activeConv}/messages`, {
+          content: `📋 Tarea asignada a ${assignedName}: "${taskForm.title}" [${taskForm.priority.toUpperCase()}]${taskForm.due_date ? ` - Vence: ${taskForm.due_date}` : ''}`,
+          msg_type: 'text',
+        });
+        fetchMessages(activeConv);
+        fetchConversations();
+      }
+      setShowTaskDialog(false);
+      toast.success(`Tarea asignada a ${assignedName}`);
+    } catch { toast.error('Error creando tarea'); }
   };
 
   const getConvName = (conv) => {
@@ -285,6 +323,10 @@ export default function AdminTeamChat() {
                   className="p-2 rounded-full text-slate-400 hover:bg-slate-100 transition-colors" disabled={uploading} data-testid="attach-btn">
                   <Paperclip className="w-5 h-5" />
                 </button>
+                <button onClick={openTaskDialog}
+                  className="p-2 rounded-full text-slate-400 hover:bg-amber-100 hover:text-amber-600 transition-colors" data-testid="task-btn" title="Asignar tarea">
+                  <ListTodo className="w-5 h-5" />
+                </button>
                 <input ref={fileInputRef} type="file" className="hidden" accept=".pdf,.jpg,.jpeg,.png,.gif,.webp" onChange={handleFileUpload} />
                 <Input value={input} onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
@@ -340,6 +382,61 @@ export default function AdminTeamChat() {
                 Crear grupo
               </Button>
             </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Task Dialog */}
+      <Dialog open={showTaskDialog} onOpenChange={setShowTaskDialog}>
+        <DialogContent className="max-w-sm rounded-xl">
+          <DialogHeader>
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center">
+                <ListTodo className="w-4 h-4 text-amber-600" />
+              </div>
+              <DialogTitle className="text-lg font-semibold" style={{ fontFamily: 'Manrope, sans-serif' }}>Asignar tarea</DialogTitle>
+            </div>
+          </DialogHeader>
+          <div className="space-y-3 mt-2">
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Titulo *</label>
+              <Input value={taskForm.title} onChange={e => setTaskForm({...taskForm, title: e.target.value})} placeholder="Ej: Revisar documentos de Juan" data-testid="task-title-input" />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Descripcion</label>
+              <Textarea value={taskForm.description} onChange={e => setTaskForm({...taskForm, description: e.target.value})} placeholder="Detalles de la tarea..." rows={2} />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">Prioridad</label>
+                <Select value={taskForm.priority} onValueChange={v => setTaskForm({...taskForm, priority: v})}>
+                  <SelectTrigger className="h-9"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="baja"><span className="flex items-center gap-1.5"><Flag className="w-3 h-3 text-blue-500" />Baja</span></SelectItem>
+                    <SelectItem value="media"><span className="flex items-center gap-1.5"><Flag className="w-3 h-3 text-amber-500" />Media</span></SelectItem>
+                    <SelectItem value="alta"><span className="flex items-center gap-1.5"><Flag className="w-3 h-3 text-red-500" />Alta</span></SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <label className="text-xs font-medium text-slate-600 mb-1 block">Fecha limite</label>
+                <Input type="date" value={taskForm.due_date} onChange={e => setTaskForm({...taskForm, due_date: e.target.value})} className="h-9" />
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1 block">Asignar a *</label>
+              <Select value={taskForm.assigned_to} onValueChange={v => setTaskForm({...taskForm, assigned_to: v})}>
+                <SelectTrigger className="h-9" data-testid="task-assign-select"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
+                <SelectContent>
+                  {[...staffList, ...(userId ? [{ id: userId, name: user?.name || 'Yo', role: 'admin' }] : [])].map(s => (
+                    <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleCreateTask} className="w-full h-10 bg-amber-500 hover:bg-amber-600 rounded-lg font-medium" data-testid="create-task-btn">
+              <ListTodo className="w-4 h-4 mr-2" /> Asignar tarea
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
