@@ -1500,7 +1500,7 @@ async def generate_presupuesto_pdf(pid: str, user=Depends(require_staff_or_admin
     try:
         import urllib.request
         logo_path = "/tmp/tramilex_logo.png"
-        urllib.request.urlretrieve("https://customer-assets-lxgj4vgw.emergentagent.net/job_inmigra-docs/artifacts/8hv3nj18_tramilex_logo_1600x900.png", logo_path)
+        urllib.request.urlretrieve("https://tramilex.es/logo.png", logo_path)
         logo = RLImage(logo_path, width=50*mm, height=28*mm)
         logo.hAlign = 'LEFT'
         elements.append(logo)

@@ -18,7 +18,7 @@ function getGreeting() {
   return 'Buenas noches';
 }
 
-const LOGO_URL = "https://customer-assets-lxgj4vgw.emergentagent.net/job_inmigra-docs/artifacts/8hv3nj18_tramilex_logo_1600x900.png";
+const LOGO_URL = "https://tramilex.es/logo.png";
 
 const CLIENT_CATEGORIES = [
   { value: "identificacion", label: "Identificacion" },
