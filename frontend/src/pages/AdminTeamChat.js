@@ -8,7 +8,8 @@ import { toast } from 'sonner';
 import EmojiPicker from 'emoji-picker-react';
 import {
   Send, Smile, Paperclip, Users, Plus, MessageCircle, Image as ImageIcon,
-  FileText, X, ArrowLeft, Hash, User, Download, ListTodo, Calendar, Flag
+  FileText, X, ArrowLeft, Hash, User, Download, ListTodo, Calendar, Flag,
+  Check, CheckCheck, Search
 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
@@ -42,6 +43,10 @@ export default function AdminTeamChat() {
   const [uploading, setUploading] = useState(false);
   const [showTaskDialog, setShowTaskDialog] = useState(false);
   const [taskForm, setTaskForm] = useState({ title: '', description: '', priority: 'media', due_date: '', assigned_to: '' });
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const pollRef = useRef(null);
@@ -183,6 +188,22 @@ export default function AdminTeamChat() {
     return otherNames.join(', ') || 'Chat';
   };
 
+  const handleSearch = useCallback(async () => {
+    if (!searchQuery.trim() || !activeConv) return;
+    setSearching(true);
+    try {
+      const res = await api.get(`/team-chat/conversations/${activeConv}/search?q=${encodeURIComponent(searchQuery)}`);
+      setSearchResults(res.data);
+    } catch {}
+    setSearching(false);
+  }, [searchQuery, activeConv]);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) { setSearchResults([]); return; }
+    const t = setTimeout(handleSearch, 400);
+    return () => clearTimeout(t);
+  }, [searchQuery, handleSearch]);
+
   const getConvInitial = (conv) => {
     const name = getConvName(conv);
     return name.charAt(0).toUpperCase();
@@ -254,7 +275,7 @@ export default function AdminTeamChat() {
               <div className={`w-9 h-9 rounded-full flex items-center justify-center text-white font-bold text-sm ${activeConvData?.type === 'group' ? 'bg-violet-500' : 'bg-slate-700'}`}>
                 {activeConvData?.type === 'group' ? <Hash className="w-4 h-4" /> : getConvInitial(activeConvData || {})}
               </div>
-              <div>
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-semibold text-slate-900">{activeConvData ? getConvName(activeConvData) : ''}</p>
                 <p className="text-[10px] text-slate-400">
                   {activeConvData?.type === 'group'
@@ -262,13 +283,50 @@ export default function AdminTeamChat() {
                     : 'Privado'}
                 </p>
               </div>
+              <button onClick={() => { setSearchOpen(!searchOpen); setSearchQuery(''); setSearchResults([]); }}
+                className={`p-2 rounded-full transition-colors ${searchOpen ? 'bg-violet-100 text-violet-600' : 'text-slate-400 hover:bg-slate-100'}`} data-testid="search-chat-btn">
+                <Search className="w-4 h-4" />
+              </button>
             </div>
+
+            {/* Search bar */}
+            {searchOpen && (
+              <div className="px-4 py-2 border-b border-slate-100 bg-white">
+                <div className="flex items-center gap-2 bg-slate-50 rounded-lg px-3">
+                  <Search className="w-4 h-4 text-slate-400 shrink-0" />
+                  <Input value={searchQuery} onChange={e => setSearchQuery(e.target.value)} placeholder="Buscar mensajes y archivos..."
+                    className="border-0 bg-transparent focus-visible:ring-0 p-0 h-9 text-sm" autoFocus data-testid="search-chat-input" />
+                  {searchQuery && <button onClick={() => { setSearchQuery(''); setSearchResults([]); }} className="text-slate-400 hover:text-slate-600"><X className="w-3.5 h-3.5" /></button>}
+                </div>
+                {searchResults.length > 0 && (
+                  <div className="mt-2 max-h-48 overflow-y-auto space-y-1">
+                    {searchResults.map(r => (
+                      <div key={r.id} className="flex items-start gap-2 px-2 py-2 rounded-lg hover:bg-slate-50 cursor-pointer text-left">
+                        <div className="shrink-0 mt-0.5">
+                          {r.msg_type === 'image' ? <ImageIcon className="w-3.5 h-3.5 text-violet-400" /> : r.msg_type === 'file' ? <FileText className="w-3.5 h-3.5 text-blue-400" /> : <MessageCircle className="w-3.5 h-3.5 text-slate-400" />}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-slate-900 truncate">{r.content || r.file_name}</p>
+                          <p className="text-[10px] text-slate-400">{r.sender_name} · {new Date(r.created_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' })}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {searchQuery && searchResults.length === 0 && !searching && (
+                  <p className="text-xs text-slate-400 text-center py-3">Sin resultados</p>
+                )}
+              </div>
+            )}
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto px-4 py-4 space-y-1 bg-slate-50/50">
               {messages.map((msg, i) => {
                 const isMine = msg.sender_id === userId;
                 const showAvatar = !isMine && (i === 0 || messages[i - 1]?.sender_id !== msg.sender_id);
+                const readByOthers = (msg.read_by || []).filter(id => id !== msg.sender_id).length;
+                const totalOthers = activeConvData ? Object.keys(activeConvData.member_names || {}).length - 1 : 1;
+                const isRead = readByOthers >= totalOthers && totalOthers > 0;
                 return (
                   <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'} ${showAvatar ? 'mt-3' : 'mt-0.5'}`}>
                     <div className={`max-w-[75%] ${isMine ? 'items-end' : 'items-start'}`}>
@@ -296,9 +354,16 @@ export default function AdminTeamChat() {
                         )}
                         {msg.msg_type === 'text' && <span>{msg.content}</span>}
                       </div>
-                      <p className={`text-[9px] text-slate-400 mt-0.5 ${isMine ? 'text-right mr-1' : 'ml-1'}`}>
-                        {new Date(msg.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                      </p>
+                      <div className={`flex items-center gap-1 mt-0.5 ${isMine ? 'justify-end mr-1' : 'ml-1'}`}>
+                        <p className="text-[9px] text-slate-400">
+                          {new Date(msg.created_at).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                        </p>
+                        {isMine && (
+                          isRead
+                            ? <CheckCheck className="w-3.5 h-3.5 text-blue-400" />
+                            : <Check className="w-3 h-3 text-slate-300" />
+                        )}
+                      </div>
                     </div>
                   </div>
                 );

@@ -3736,9 +3736,31 @@ async def get_messages(conv_id: str, limit: int = 50, before: str = "", user=Dep
             "msg_type": m.get("msg_type", "text"),
             "file_url": m.get("file_url", ""),
             "file_name": m.get("file_name", ""),
+            "read_by": m.get("read_by", []),
             "created_at": m["created_at"],
         })
     return result
+
+
+@api_router.get("/team-chat/conversations/{conv_id}/search")
+async def search_messages(conv_id: str, q: str = "", user=Depends(require_staff_or_admin)):
+    conv = await db.team_conversations.find_one({"_id": ObjectId(conv_id)})
+    if not conv or user["_id"] not in conv.get("members", []):
+        raise HTTPException(status_code=403, detail="No tienes acceso")
+    if not q.strip():
+        return []
+    msgs = await db.team_messages.find({
+        "conversation_id": conv_id,
+        "content": {"$regex": q, "$options": "i"}
+    }).sort("created_at", -1).limit(30).to_list(30)
+    return [{
+        "id": str(m["_id"]),
+        "sender_name": m.get("sender_name", ""),
+        "content": m.get("content", ""),
+        "msg_type": m.get("msg_type", "text"),
+        "file_name": m.get("file_name", ""),
+        "created_at": m["created_at"],
+    } for m in msgs]
 
 
 @api_router.post("/team-chat/conversations/{conv_id}/messages")
