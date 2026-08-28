@@ -50,8 +50,25 @@ export default function AdminTeamChat() {
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const pollRef = useRef(null);
+  const lastMsgCountRef = useRef(0);
 
   const userId = user?.id || user?._id || '';
+
+  const playNotificationSound = useCallback(() => {
+    try {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.frequency.setValueAtTime(880, ctx.currentTime);
+      osc.frequency.setValueAtTime(1100, ctx.currentTime + 0.1);
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.3);
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.3);
+    } catch {}
+  }, []);
 
   const fetchConversations = useCallback(async () => {
     try {
@@ -87,8 +104,15 @@ export default function AdminTeamChat() {
   }, [activeConv, fetchMessages, fetchConversations]);
 
   useEffect(() => {
+    if (messages.length > 0 && lastMsgCountRef.current > 0 && messages.length > lastMsgCountRef.current) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg.sender_id !== userId) {
+        playNotificationSound();
+      }
+    }
+    lastMsgCountRef.current = messages.length;
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, userId, playNotificationSound]);
 
   const handleSend = async () => {
     if (!input.trim() || !activeConv) return;
