@@ -661,11 +661,14 @@ async def verify_pin(body: PinVerifyInput):
         if not user:
             raise HTTPException(status_code=404, detail="Usuario no encontrado")
         uid = str(user["_id"])
+        # Clear must_change_password since PIN login proves identity via email
+        if user.get("must_change_password"):
+            await db.users.update_one({"_id": user["_id"]}, {"$set": {"must_change_password": False}})
         token = create_access_token(uid, email, user.get("role", "client"), body.keep_session)
         return {
             "id": uid, "email": email, "name": user.get("name", ""),
             "role": user.get("role", "client"),
-            "must_change_password": user.get("must_change_password", False),
+            "must_change_password": False,
             "tutorial_seen": user.get("tutorial_seen", False), "token": token
         }
 
