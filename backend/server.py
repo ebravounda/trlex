@@ -3244,22 +3244,27 @@ async def mark_all_notifications_read(user=Depends(require_staff_or_admin)):
 # ============================
 
 def get_ms_graph_token():
+    import requests as req
     try:
-        import msal
         client_id = os.environ.get("MS_CLIENT_ID", "")
         tenant_id = os.environ.get("MS_TENANT_ID", "")
         client_secret = os.environ.get("MS_CLIENT_SECRET", "")
         if not client_id or not tenant_id or not client_secret:
             return None
-        app = msal.ConfidentialClientApplication(
-            client_id,
-            authority=f"https://login.microsoftonline.com/{tenant_id}",
-            client_credential=client_secret
-        )
-        result = app.acquire_token_for_client(scopes=["https://graph.microsoft.com/.default"])
-        return result.get("access_token")
+        url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+        data = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "scope": "https://graph.microsoft.com/.default",
+            "grant_type": "client_credentials",
+        }
+        r = req.post(url, data=data, timeout=10)
+        if r.status_code == 200:
+            return r.json().get("access_token")
+        logger.error(f"MS Graph token error: {r.status_code} {r.text[:200]}")
+        return None
     except Exception as e:
-        logger.error(f"MSAL token error: {e}")
+        logger.error(f"MS Graph token error: {e}")
         return None
 
 
