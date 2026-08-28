@@ -957,7 +957,7 @@ async def generate_ficha_pdf(client_id: str, user=Depends(require_staff_or_admin
 
 
 @api_router.post("/clients/{client_id}/impersonate")
-async def impersonate_client(client_id: str, user=Depends(require_admin)):
+async def impersonate_client(client_id: str, user=Depends(require_staff_or_admin)):
     try:
         client = await db.users.find_one({"_id": ObjectId(client_id), "role": "client"})
     except Exception:
@@ -972,7 +972,7 @@ async def impersonate_client(client_id: str, user=Depends(require_admin)):
 
 
 @api_router.delete("/clients/{client_id}")
-async def delete_client(client_id: str, user=Depends(require_admin)):
+async def delete_client(client_id: str, user=Depends(require_staff_or_admin)):
     await db.documents.update_many(
         {"user_id": client_id},
         {"$set": {"is_deleted": True}}
@@ -4265,7 +4265,7 @@ async def chatbot_message(body: ChatMessageInput, user=Depends(get_current_user)
         raise HTTPException(status_code=400, detail="El mensaje no puede estar vacio")
 
     role = user.get("role", "client")
-    if body.context == "admin" and role == "admin":
+    if body.context == "admin" and role in ("admin", "staff"):
         system_msg = ADMIN_SYSTEM_PROMPT
     elif body.context == "company" and role == "company":
         system_msg = COMPANY_SYSTEM_PROMPT
