@@ -4527,6 +4527,8 @@ async def startup():
 # Include router
 app.include_router(api_router)
 
+
+
 # CORS
 app.add_middleware(
     CORSMiddleware,
