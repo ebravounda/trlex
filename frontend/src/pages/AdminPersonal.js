@@ -4,6 +4,7 @@ import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { toast } from 'sonner';
 import { Users, Search, ChevronDown, ChevronUp, Building2, Eye, Plus, Briefcase } from 'lucide-react';
 
@@ -44,13 +45,20 @@ export default function AdminPersonal() {
   const handleAddProfession = async () => {
     if (!newProfession.trim()) return;
     try {
-      // Use first company or a generic one
       const companies = workers.map(w => w.company_id).filter(Boolean);
       const cid = companies[0] || 'global';
       await api.post(`/companies/${cid}/professions`, { name: newProfession.trim() });
       setNewProfession('');
       fetchData();
       toast.success('Categoria creada');
+    } catch { toast.error('Error'); }
+  };
+
+  const handleChangeProfession = async (workerId, profession) => {
+    try {
+      await api.put(`/personal/${workerId}/profession`, { profession });
+      fetchData();
+      toast.success('Categoria asignada');
     } catch { toast.error('Error'); }
   };
 
@@ -187,10 +195,21 @@ export default function AdminPersonal() {
                               </div>
                             </div>
                           </div>
-                          <Button variant="outline" size="sm" className="gap-1 text-xs h-8"
-                            onClick={() => navigate(`/admin/empresas/${w.company_id}`)} data-testid={`view-worker-${w.id}`}>
-                            <Eye className="w-3 h-3" /> Ver empresa
-                          </Button>
+                          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                            <Select value={w.profession} onValueChange={v => handleChangeProfession(w.id, v)}>
+                              <SelectTrigger className="h-8 w-36 text-xs">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value=" ">Sin categoria</SelectItem>
+                                {professions.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <Button variant="outline" size="sm" className="gap-1 text-xs h-8"
+                              onClick={() => navigate(`/admin/empresas/${w.company_id}`)} data-testid={`view-worker-${w.id}`}>
+                              <Eye className="w-3 h-3" /> Ver empresa
+                            </Button>
+                          </div>
                         </div>
                       ))}
                     </div>
@@ -238,10 +257,20 @@ export default function AdminPersonal() {
                         </div>
                       </div>
                     </div>
-                    <Button variant="outline" size="sm" className="gap-1 text-xs h-8"
-                      onClick={() => navigate(`/admin/empresas/${w.company_id}`)}>
-                      <Eye className="w-3 h-3" /> Ver empresa
-                    </Button>
+                    <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                      <Select value="" onValueChange={v => handleChangeProfession(w.id, v)}>
+                        <SelectTrigger className="h-8 w-40 text-xs" data-testid={`assign-prof-${w.id}`}>
+                          <SelectValue placeholder="Asignar categoria" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {professions.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                      <Button variant="outline" size="sm" className="gap-1 text-xs h-8"
+                        onClick={() => navigate(`/admin/empresas/${w.company_id}`)}>
+                        <Eye className="w-3 h-3" /> Ver empresa
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>

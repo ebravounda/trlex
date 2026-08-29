@@ -2477,6 +2477,14 @@ async def get_all_professions(user=Depends(require_staff_or_admin)):
     all_profs = sorted(set([p for p in (from_workers + from_custom) if p]))
     return all_profs
 
+@api_router.put("/personal/{worker_id}/profession")
+async def update_worker_profession(worker_id: str, body: dict = Body(...), user=Depends(require_staff_or_admin)):
+    profession = body.get("profession", "").strip()
+    result = await db.company_workers.update_one({"_id": ObjectId(worker_id)}, {"$set": {"profession": profession}})
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Trabajador no encontrado")
+    return {"message": "Categoria actualizada"}
+
 
 # --- Company profession categories ---
 @api_router.get("/companies/{company_id}/professions")
