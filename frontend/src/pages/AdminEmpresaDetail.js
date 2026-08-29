@@ -65,8 +65,12 @@ export default function AdminEmpresaDetail() {
   const [companyDocs, setCompanyDocs] = useState([]);
   const [uploadingCompanyDoc, setUploadingCompanyDoc] = useState(false);
   const [companyDocCategory, setCompanyDocCategory] = useState('otros');
+  const [professions, setProfessions] = useState([]);
+  const [newProfession, setNewProfession] = useState('');
+  const [expandedProfession, setExpandedProfession] = useState(null);
+  const [activeTab, setActiveTab] = useState('general');
 
-  const [workerForm, setWorkerForm] = useState({ name: '', last_name: '', identification: '', phone: '', email: '', nationality: '' });
+  const [workerForm, setWorkerForm] = useState({ name: '', last_name: '', identification: '', phone: '', email: '', nationality: '', profession: '' });
   const [tramiteForm, setTramiteForm] = useState({ country: '', tramite_id: '', notes: '' });
 
   const fetchCompany = useCallback(async () => {
@@ -99,6 +103,22 @@ export default function AdminEmpresaDetail() {
   }, [companyId]);
 
   useEffect(() => { fetchCompanyDocs(); }, [fetchCompanyDocs]);
+
+  const fetchProfessions = useCallback(async () => {
+    try { const res = await api.get(`/companies/${companyId}/professions`); setProfessions(res.data); } catch {}
+  }, [companyId]);
+
+  useEffect(() => { fetchProfessions(); }, [fetchProfessions]);
+
+  const handleAddProfession = async () => {
+    if (!newProfession.trim()) return;
+    try {
+      await api.post(`/companies/${companyId}/professions`, { name: newProfession.trim() });
+      setNewProfession('');
+      fetchProfessions();
+      toast.success('Profesion agregada');
+    } catch { toast.error('Error'); }
+  };
 
   const handleUploadCompanyDoc = async (files) => {
     if (!files?.length) return;
@@ -200,7 +220,7 @@ export default function AdminEmpresaDetail() {
     if (!workerForm.name.trim()) { toast.error('El nombre es obligatorio'); return; }
     try {
       await api.post(`/companies/${companyId}/workers`, workerForm);
-      setWorkerForm({ name: '', nie: '', passport_number: '', phone: '', email: '', nationality: '' });
+      setWorkerForm({ name: '', last_name: '', identification: '', phone: '', email: '', nationality: '', profession: '' });
       setShowAddWorker(false);
       fetchCompany();
       toast.success('Trabajador agregado');
@@ -383,6 +403,26 @@ export default function AdminEmpresaDetail() {
           <p className="text-sm text-slate-700"><strong>Contrasena:</strong> {company.password_plain || '****'}</p>
         </div>
       </div>
+
+      {/* Tabs */}
+      <div className="flex bg-white border border-slate-200 rounded-xl p-1 gap-1">
+        {[
+          { key: 'general', label: 'General', icon: Building2 },
+          { key: 'personal', label: 'Personal', icon: Users },
+        ].map(tab => (
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+            className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-medium transition-all flex-1 justify-center ${
+              activeTab === tab.key ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+            }`} data-testid={`tab-${tab.key}`}>
+            <tab.icon className="w-4 h-4" /> {tab.label}
+            {tab.key === 'personal' && company.workers?.length > 0 && (
+              <span className={`text-xs px-1.5 py-0.5 rounded-md ${activeTab === tab.key ? 'bg-white/20' : 'bg-slate-100'}`}>{company.workers.length}</span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'general' && (<>
 
       {/* Company Documents Section */}
       <div className="bg-white border border-slate-200 rounded-xl overflow-hidden" data-testid="company-docs-section">
@@ -730,6 +770,147 @@ export default function AdminEmpresaDetail() {
         </div>
       )}
 
+      </>)}
+
+      {/* Personal Tab */}
+      {activeTab === 'personal' && (
+        <div className="space-y-6">
+          {/* Add profession + worker */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Input value={newProfession} onChange={e => setNewProfession(e.target.value)}
+                placeholder="Nueva categoria (ej: Pintores)" className="w-64 h-9 text-sm" data-testid="new-profession-input"
+                onKeyDown={e => { if (e.key === 'Enter') handleAddProfession(); }} />
+              <Button variant="outline" size="sm" className="gap-1 h-9" onClick={handleAddProfession} data-testid="add-profession-btn">
+                <Plus className="w-3.5 h-3.5" /> Categoria
+              </Button>
+            </div>
+            <Button onClick={() => setShowAddWorker(true)} className="bg-slate-900 hover:bg-slate-800 gap-2 h-9 text-sm" data-testid="add-worker-btn-personal">
+              <Plus className="w-4 h-4" /> Agregar trabajador
+            </Button>
+          </div>
+
+          {/* Workers without profession */}
+          {(() => {
+            const uncategorized = (company.workers || []).filter(w => !w.profession);
+            const groupedByProfession = {};
+            (company.workers || []).forEach(w => {
+              if (w.profession) {
+                if (!groupedByProfession[w.profession]) groupedByProfession[w.profession] = [];
+                groupedByProfession[w.profession].push(w);
+              }
+            });
+
+            const allProfessionKeys = [...new Set([...professions, ...Object.keys(groupedByProfession)])].sort();
+
+            return (
+              <div className="space-y-4">
+                {/* Profession accordions */}
+                {allProfessionKeys.map(prof => {
+                  const workers = groupedByProfession[prof] || [];
+                  const isOpen = expandedProfession === prof;
+                  return (
+                    <div key={prof} className="bg-white border border-slate-200 rounded-xl overflow-hidden" data-testid={`profession-${prof}`}>
+                      <button onClick={() => setExpandedProfession(isOpen ? null : prof)}
+                        className="w-full flex items-center justify-between px-5 py-4 hover:bg-slate-50 transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-sky-100 flex items-center justify-center">
+                            <Users className="w-4 h-4 text-sky-600" />
+                          </div>
+                          <div className="text-left">
+                            <p className="text-sm font-semibold text-slate-900">{prof}</p>
+                            <p className="text-xs text-slate-500">{workers.length} trabajador(es)</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge className="bg-slate-100 text-slate-600 border-0 text-xs">{workers.length}</Badge>
+                          {isOpen ? <ChevronUp className="w-4 h-4 text-slate-400" /> : <ChevronDown className="w-4 h-4 text-slate-400" />}
+                        </div>
+                      </button>
+                      {isOpen && (
+                        <div className="border-t border-slate-100 divide-y divide-slate-100">
+                          {workers.length === 0 ? (
+                            <p className="text-sm text-slate-500 text-center py-6">Sin trabajadores en esta categoria</p>
+                          ) : workers.map(w => (
+                            <div key={w.id} className="px-5 py-3 flex items-center justify-between hover:bg-slate-50">
+                              <div className="flex items-center gap-3">
+                                <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
+                                  <span className="text-xs font-bold text-slate-600">{w.name.charAt(0).toUpperCase()}</span>
+                                </div>
+                                <div>
+                                  <p className="text-sm font-medium text-slate-800">{w.name} {w.last_name || ''}</p>
+                                  <p className="text-xs text-slate-500">{w.identification && `ID: ${w.identification}`} {w.doc_count || 0} doc(s)</p>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <Button variant="outline" size="sm" className="gap-1 text-xs h-7" onClick={() => { setExpandedWorker(w.id === expandedWorker ? null : w.id); toggleWorker(w.id); navigate(`/admin/empresas/${companyId}`); }}>
+                                  <Eye className="w-3 h-3" /> Ver
+                                </Button>
+                                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDeleteWorker(w.id, w.name)}>
+                                  <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+
+                {/* Uncategorized workers */}
+                {uncategorized.length > 0 && (
+                  <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                    <div className="px-5 py-4 border-b border-slate-100 bg-slate-50">
+                      <div className="flex items-center gap-3">
+                        <div className="w-9 h-9 rounded-lg bg-slate-200 flex items-center justify-center">
+                          <Users className="w-4 h-4 text-slate-500" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-semibold text-slate-700">Sin categoria</p>
+                          <p className="text-xs text-slate-500">{uncategorized.length} trabajador(es)</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-slate-100">
+                      {uncategorized.map(w => (
+                        <div key={w.id} className="px-5 py-3 flex items-center justify-between hover:bg-slate-50">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-slate-200 flex items-center justify-center">
+                              <span className="text-xs font-bold text-slate-600">{w.name.charAt(0).toUpperCase()}</span>
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-800">{w.name} {w.last_name || ''}</p>
+                              <p className="text-xs text-slate-500">{w.identification && `ID: ${w.identification}`} {w.doc_count || 0} doc(s)</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <Button variant="outline" size="sm" className="gap-1 text-xs h-7" onClick={() => { toggleWorker(w.id); setActiveTab('general'); }}>
+                              <Eye className="w-3 h-3" /> Ver
+                            </Button>
+                            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDeleteWorker(w.id, w.name)}>
+                              <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {allProfessionKeys.length === 0 && uncategorized.length === 0 && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-12 text-center">
+                    <Users className="w-12 h-12 text-slate-200 mx-auto mb-3" strokeWidth={1} />
+                    <p className="text-sm text-slate-600 font-medium">No hay trabajadores registrados</p>
+                    <p className="text-xs text-slate-400 mt-1">Agrega una categoria y luego trabajadores</p>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Add Worker Dialog */}
       <Dialog open={showAddWorker} onOpenChange={setShowAddWorker}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
@@ -745,6 +926,16 @@ export default function AdminEmpresaDetail() {
               <Input placeholder="Email" value={workerForm.email} onChange={e => setWorkerForm({...workerForm, email: e.target.value})} />
             </div>
             <Input placeholder="Nacionalidad" value={workerForm.nationality} onChange={e => setWorkerForm({...workerForm, nationality: e.target.value})} />
+            <div>
+              <label className="text-xs text-slate-600 mb-1 block">Profesion / Categoria</label>
+              <Select value={workerForm.profession} onValueChange={v => setWorkerForm({...workerForm, profession: v})}>
+                <SelectTrigger className="h-10" data-testid="worker-profession-select"><SelectValue placeholder="Seleccionar categoria..." /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value=" ">Sin categoria</SelectItem>
+                  {professions.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
             <Button onClick={handleAddWorker} className="w-full bg-slate-900 hover:bg-slate-800" data-testid="submit-worker-btn">
               Agregar trabajador
             </Button>

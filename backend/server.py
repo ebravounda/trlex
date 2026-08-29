@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
 
-from fastapi import FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Request, Depends, BackgroundTasks
+from fastapi import FastAPI, APIRouter, UploadFile, File, Form, HTTPException, Request, Depends, BackgroundTasks, Body
 from fastapi.responses import Response as FastAPIResponse, StreamingResponse
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -327,6 +327,7 @@ class CompanyWorkerInput(BaseModel):
     father_name: str = ""
     mother_name: str = ""
     children: List[str] = []
+    profession: str = ""
 
 
 class CompanyTramiteInput(BaseModel):
@@ -2399,6 +2400,7 @@ async def add_worker(company_id: str, body: CompanyWorkerInput, user=Depends(get
         "father_name": body.father_name.strip(),
         "mother_name": body.mother_name.strip(),
         "children": body.children,
+        "profession": body.profession.strip(),
         "created_at": datetime.now(timezone.utc).isoformat()
     }
     result = await db.company_workers.insert_one(worker_doc)
@@ -2430,6 +2432,7 @@ async def update_worker(company_id: str, worker_id: str, body: CompanyWorkerInpu
         "father_name": body.father_name.strip(),
         "mother_name": body.mother_name.strip(),
         "children": body.children,
+        "profession": body.profession.strip(),
     }
     try:
         result = await db.company_workers.update_one(
@@ -2441,8 +2444,29 @@ async def update_worker(company_id: str, worker_id: str, body: CompanyWorkerInpu
     return {"message": "Trabajador actualizado"}
 
 
+
+# --- Company profession categories ---
+@api_router.get("/companies/{company_id}/professions")
+async def get_company_professions(company_id: str, user=Depends(get_current_user)):
+    professions = await db.company_workers.distinct("profession", {"company_id": company_id})
+    custom = await db.company_professions.find({"company_id": company_id}).to_list(100)
+    custom_names = [c["name"] for c in custom]
+    all_profs = sorted(set([p for p in professions if p] + custom_names))
+    return all_profs
+
+@api_router.post("/companies/{company_id}/professions")
+async def add_company_profession(company_id: str, body: dict = Body(...), user=Depends(require_staff_or_admin)):
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nombre requerido")
+    existing = await db.company_professions.find_one({"company_id": company_id, "name": name})
+    if not existing:
+        await db.company_professions.insert_one({"company_id": company_id, "name": name, "created_at": datetime.now(timezone.utc).isoformat()})
+    return {"message": "Profesion agregada"}
+
+
 @api_router.delete("/companies/{company_id}/workers/{worker_id}")
-async def delete_worker(company_id: str, worker_id: str, user=Depends(get_current_user)):
+async def delete_worker_endpoint(company_id: str, worker_id: str, user=Depends(get_current_user)):
     if user.get("role") == "company":
         if user["_id"] != company_id:
             raise HTTPException(status_code=403, detail="Acceso denegado")
