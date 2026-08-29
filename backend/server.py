@@ -2696,6 +2696,40 @@ async def preview_company_document(doc_id: str, user=Depends(get_current_user)):
     })
 
 
+
+
+@api_router.put("/company-documents/{doc_id}/replace")
+async def replace_company_document(doc_id: str, file: UploadFile = File(...), user=Depends(require_staff_or_admin)):
+    doc = await db.company_documents.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Archivo supera 10MB")
+    ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "bin"
+    company_id = doc.get("company_id", "unknown")
+    storage_path = f"{APP_NAME}/company_docs/{company_id}/{uuid.uuid4()}.{ext}"
+    put_object(storage_path, content, file.content_type or "application/octet-stream")
+    await db.company_documents.update_one({"_id": ObjectId(doc_id)}, {"$set": {
+        "storage_path": storage_path,
+        "filename": storage_path,
+        "original_filename": file.filename,
+        "display_name": file.filename,
+        "content_type": file.content_type or "application/octet-stream",
+        "size": len(content),
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+    }})
+    return {"message": "Documento reemplazado", "filename": file.filename}
+
+@api_router.put("/company-documents/{doc_id}/rename")
+async def rename_company_document(doc_id: str, body: dict = Body(...), user=Depends(require_staff_or_admin)):
+    name = body.get("name", "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="Nombre requerido")
+    await db.company_documents.update_one({"_id": ObjectId(doc_id)}, {"$set": {"display_name": name}})
+    return {"message": "Nombre actualizado"}
+
+
 @api_router.put("/company-documents/{doc_id}/status")
 async def update_company_doc_status(doc_id: str, body: DocumentStatusUpdate, user=Depends(require_staff_or_admin)):
     if body.status not in ["pending_review", "reviewed"]:

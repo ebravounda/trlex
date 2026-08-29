@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { toast } from 'sonner';
 import {
   FolderOpen, FolderPlus, Plus, Upload, Download, Trash2, ArrowLeft,
-  FileText, Image as ImageIcon, Pencil, Check, X, Eye
+  FileText, Image as ImageIcon, Pencil, Check, X, Eye, RefreshCw
 } from 'lucide-react';
 
 const FOLDER_COLORS = [
@@ -33,6 +33,10 @@ export default function DocumentFolders({ companyId, workerId = null }) {
   const [loaded, setLoaded] = useState(false);
   const [previewDoc, setPreviewDoc] = useState(null);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [editingDocName, setEditingDocName] = useState(null);
+  const [docNewName, setDocNewName] = useState('');
+  const replaceRef = useRef(null);
+  const [replacingDocId, setReplacingDocId] = useState(null);
   const fileRef = useRef(null);
 
   const fetchFolders = async () => {
@@ -181,6 +185,29 @@ export default function DocumentFolders({ companyId, workerId = null }) {
     return ct?.startsWith('image/') || ct === 'application/pdf';
   };
 
+  const handleRenameDoc = async (docId) => {
+    if (!docNewName.trim()) return;
+    try {
+      await api.put(`/company-documents/${docId}/rename`, { name: docNewName.trim() });
+      setEditingDocName(null);
+      fetchDocs(currentFolder);
+      toast.success('Nombre actualizado');
+    } catch { toast.error('Error'); }
+  };
+
+  const handleReplaceDoc = async (docId, file) => {
+    if (!file) return;
+    setReplacingDocId(docId);
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      await api.put(`/company-documents/${docId}/replace`, fd);
+      fetchDocs(currentFolder);
+      toast.success('Documento reemplazado');
+    } catch { toast.error('Error reemplazando'); }
+    setReplacingDocId(null);
+  };
+
   const currentFolderData = folders.find(f => f.id === currentFolder);
 
   return (
@@ -307,18 +334,33 @@ export default function DocumentFolders({ companyId, workerId = null }) {
                 {doc.content_type?.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-sky-500" /> : <FileText className="w-4 h-4 text-red-500" />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className={`text-sm font-medium text-slate-800 truncate ${isPreviewable(doc.content_type) ? 'cursor-pointer hover:text-sky-600' : ''}`}
-                  onClick={() => isPreviewable(doc.content_type) && handlePreview(doc)}>
-                  {doc.display_name || doc.original_filename}
-                </p>
+                {editingDocName === doc.id ? (
+                  <div className="flex items-center gap-1">
+                    <Input value={docNewName} onChange={e => setDocNewName(e.target.value)} className="h-7 text-xs flex-1" autoFocus
+                      onKeyDown={e => { if (e.key === 'Enter') handleRenameDoc(doc.id); if (e.key === 'Escape') setEditingDocName(null); }} />
+                    <button onClick={() => handleRenameDoc(doc.id)} className="p-0.5"><Check className="w-3.5 h-3.5 text-emerald-600" /></button>
+                    <button onClick={() => setEditingDocName(null)} className="p-0.5"><X className="w-3.5 h-3.5 text-slate-400" /></button>
+                  </div>
+                ) : (
+                  <p className={`text-sm font-medium text-slate-800 truncate ${isPreviewable(doc.content_type) ? 'cursor-pointer hover:text-sky-600' : ''}`}
+                    onClick={() => isPreviewable(doc.content_type) && handlePreview(doc)}>
+                    {doc.display_name || doc.original_filename}
+                  </p>
+                )}
                 <span className="text-[11px] text-slate-400">{formatDate(doc.uploaded_at)}</span>
               </div>
-              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
                 {isPreviewable(doc.content_type) && (
-                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handlePreview(doc)} title="Previsualizar"><Eye className="w-3.5 h-3.5 text-sky-500" /></Button>
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handlePreview(doc)} title="Ver"><Eye className="w-3.5 h-3.5 text-sky-500" /></Button>
                 )}
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDownload(doc)}><Download className="w-3.5 h-3.5 text-slate-500" /></Button>
-                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDeleteDoc(doc.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setEditingDocName(doc.id); setDocNewName(doc.display_name || doc.original_filename); }} title="Renombrar"><Pencil className="w-3.5 h-3.5 text-slate-400" /></Button>
+                <input type="file" className="hidden" ref={el => { if (replacingDocId === doc.id) replaceRef.current = el; }}
+                  onChange={e => { handleReplaceDoc(doc.id, e.target.files?.[0]); e.target.value = ''; }} />
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => { setReplacingDocId(doc.id); setTimeout(() => { const input = document.createElement('input'); input.type = 'file'; input.onchange = (e) => handleReplaceDoc(doc.id, e.target.files?.[0]); input.click(); }, 0); }} title="Reemplazar">
+                  <RefreshCw className={`w-3.5 h-3.5 text-amber-500 ${replacingDocId === doc.id ? 'animate-spin' : ''}`} />
+                </Button>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDownload(doc)} title="Descargar"><Download className="w-3.5 h-3.5 text-slate-500" /></Button>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDeleteDoc(doc.id)} title="Eliminar"><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
               </div>
             </div>
           ))}

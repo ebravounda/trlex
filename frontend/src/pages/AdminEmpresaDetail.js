@@ -11,7 +11,7 @@ import { toast } from 'sonner';
 import {
   ArrowLeft, Building2, Users, Copy, Send, Plus, Trash2, Download,
   FileText, Image as ImageIcon, Clock, ChevronDown, ChevronUp,
-  ClipboardList, Mail, RotateCcw, Upload, Eye, Check, AlertCircle, ShieldCheck, PenLine
+  ClipboardList, Mail, RotateCcw, Upload, Eye, Check, AlertCircle, ShieldCheck, PenLine, Pencil
 } from 'lucide-react';
 import DocumentFolders from '@/components/DocumentFolders';
 
@@ -53,6 +53,10 @@ export default function AdminEmpresaDetail() {
   const [workerDocs, setWorkerDocs] = useState({});
   const [showAddWorker, setShowAddWorker] = useState(false);
   const [showAddTramite, setShowAddTramite] = useState(false);
+  const [showEditCompany, setShowEditCompany] = useState(false);
+  const [editCompanyForm, setEditCompanyForm] = useState({});
+  const [showEditWorker, setShowEditWorker] = useState(null);
+  const [editWorkerForm, setEditWorkerForm] = useState({});
   const [showSendCreds, setShowSendCreds] = useState(false);
   const [customEmail, setCustomEmail] = useState('');
   const [sendMode, setSendMode] = useState('registro');
@@ -120,6 +124,25 @@ export default function AdminEmpresaDetail() {
       toast.success('Profesion agregada');
     } catch { toast.error('Error'); }
   };
+
+  const handleEditCompany = async () => {
+    try {
+      await api.put(`/companies/${companyId}`, editCompanyForm);
+      setShowEditCompany(false);
+      fetchCompany();
+      toast.success('Empresa actualizada');
+    } catch { toast.error('Error'); }
+  };
+
+  const handleEditWorker = async () => {
+    try {
+      await api.put(`/companies/${companyId}/workers/${showEditWorker}`, editWorkerForm);
+      setShowEditWorker(null);
+      fetchCompany();
+      toast.success('Trabajador actualizado');
+    } catch { toast.error('Error'); }
+  };
+
 
   const handleUploadCompanyDoc = async (files) => {
     if (!files?.length) return;
@@ -388,6 +411,12 @@ export default function AdminEmpresaDetail() {
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => {
+              setEditCompanyForm({ name: company.name, cif_nif: company.cif_nif, email: company.email || '', phone: company.phone || '', contact_person: company.contact_person || '', address: company.address || '' });
+              setShowEditCompany(true);
+            }} data-testid="edit-company-btn">
+              <Pencil className="w-3.5 h-3.5" /> Editar
+            </Button>
             <Button variant="outline" size="sm" className="gap-2" onClick={copyCredentials} data-testid="copy-creds-btn">
               <Copy className="w-3.5 h-3.5" /> Copiar credenciales
             </Button>
@@ -589,8 +618,14 @@ export default function AdminEmpresaDetail() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+                    <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => {
+                      setEditWorkerForm({ name: w.name, last_name: w.last_name || '', identification: w.identification || '', phone: w.phone || '', email: w.email || '', nationality: w.nationality || '', profession: w.profession || '', address: w.address || '', origin_country: w.origin_country || '', residence_country: w.residence_country || '', father_name: w.father_name || '', mother_name: w.mother_name || '', children: w.children || [] });
+                      setShowEditWorker(w.id);
+                    }} data-testid={`edit-worker-${w.id}`}>
+                      <Pencil className="w-3.5 h-3.5" /> Editar
+                    </Button>
                     <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => handleDownloadAll(w.id, w.name)} data-testid={`download-all-${w.id}`}>
-                      <Download className="w-3.5 h-3.5" /> Descargar Documentos
+                      <Download className="w-3.5 h-3.5" /> Documentos
                     </Button>
                     <Button variant="ghost" size="sm" onClick={() => handleDeleteWorker(w.id, w.name)}>
                       <Trash2 className="w-3.5 h-3.5 text-red-500" />
@@ -878,6 +913,69 @@ export default function AdminEmpresaDetail() {
             >
               Enviar credenciales
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Company Dialog */}
+      <Dialog open={showEditCompany} onOpenChange={setShowEditCompany}>
+        <DialogContent className="max-w-lg rounded-xl">
+          <DialogHeader><DialogTitle>Editar empresa</DialogTitle></DialogHeader>
+          <div className="space-y-3 mt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs text-slate-600">Nombre *</label><Input value={editCompanyForm.name || ''} onChange={e => setEditCompanyForm({...editCompanyForm, name: e.target.value})} className="mt-1" /></div>
+              <div><label className="text-xs text-slate-600">CIF/NIF</label><Input value={editCompanyForm.cif_nif || ''} onChange={e => setEditCompanyForm({...editCompanyForm, cif_nif: e.target.value})} className="mt-1" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs text-slate-600">Email</label><Input value={editCompanyForm.email || ''} onChange={e => setEditCompanyForm({...editCompanyForm, email: e.target.value})} className="mt-1" /></div>
+              <div><label className="text-xs text-slate-600">Telefono</label><Input value={editCompanyForm.phone || ''} onChange={e => setEditCompanyForm({...editCompanyForm, phone: e.target.value})} className="mt-1" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs text-slate-600">Persona contacto</label><Input value={editCompanyForm.contact_person || ''} onChange={e => setEditCompanyForm({...editCompanyForm, contact_person: e.target.value})} className="mt-1" /></div>
+              <div><label className="text-xs text-slate-600">Direccion</label><Input value={editCompanyForm.address || ''} onChange={e => setEditCompanyForm({...editCompanyForm, address: e.target.value})} className="mt-1" /></div>
+            </div>
+            <Button onClick={handleEditCompany} className="w-full bg-slate-900 hover:bg-slate-800" data-testid="save-edit-company-btn">Guardar cambios</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Worker Dialog */}
+      <Dialog open={!!showEditWorker} onOpenChange={() => setShowEditWorker(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto rounded-xl">
+          <DialogHeader><DialogTitle>Editar trabajador</DialogTitle></DialogHeader>
+          <div className="space-y-3 mt-2">
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs text-slate-600">Nombres *</label><Input value={editWorkerForm.name || ''} onChange={e => setEditWorkerForm({...editWorkerForm, name: e.target.value})} className="mt-1" /></div>
+              <div><label className="text-xs text-slate-600">Apellidos</label><Input value={editWorkerForm.last_name || ''} onChange={e => setEditWorkerForm({...editWorkerForm, last_name: e.target.value})} className="mt-1" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs text-slate-600">DNI/NIE/Pasaporte</label><Input value={editWorkerForm.identification || ''} onChange={e => setEditWorkerForm({...editWorkerForm, identification: e.target.value})} className="mt-1" /></div>
+              <div><label className="text-xs text-slate-600">Telefono</label><Input value={editWorkerForm.phone || ''} onChange={e => setEditWorkerForm({...editWorkerForm, phone: e.target.value})} className="mt-1" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs text-slate-600">Email</label><Input value={editWorkerForm.email || ''} onChange={e => setEditWorkerForm({...editWorkerForm, email: e.target.value})} className="mt-1" /></div>
+              <div><label className="text-xs text-slate-600">Nacionalidad</label><Input value={editWorkerForm.nationality || ''} onChange={e => setEditWorkerForm({...editWorkerForm, nationality: e.target.value})} className="mt-1" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs text-slate-600">Pais origen</label><Input value={editWorkerForm.origin_country || ''} onChange={e => setEditWorkerForm({...editWorkerForm, origin_country: e.target.value})} className="mt-1" /></div>
+              <div><label className="text-xs text-slate-600">Pais residencia</label><Input value={editWorkerForm.residence_country || ''} onChange={e => setEditWorkerForm({...editWorkerForm, residence_country: e.target.value})} className="mt-1" /></div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="text-xs text-slate-600">Nombre padre</label><Input value={editWorkerForm.father_name || ''} onChange={e => setEditWorkerForm({...editWorkerForm, father_name: e.target.value})} className="mt-1" /></div>
+              <div><label className="text-xs text-slate-600">Nombre madre</label><Input value={editWorkerForm.mother_name || ''} onChange={e => setEditWorkerForm({...editWorkerForm, mother_name: e.target.value})} className="mt-1" /></div>
+            </div>
+            <div><label className="text-xs text-slate-600">Direccion</label><Input value={editWorkerForm.address || ''} onChange={e => setEditWorkerForm({...editWorkerForm, address: e.target.value})} className="mt-1" /></div>
+            <div>
+              <label className="text-xs text-slate-600">Profesion / Categoria</label>
+              <Select value={editWorkerForm.profession || ' '} onValueChange={v => setEditWorkerForm({...editWorkerForm, profession: v.trim()})}>
+                <SelectTrigger className="mt-1"><SelectValue placeholder="Sin categoria" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value=" ">Sin categoria</SelectItem>
+                  {professions.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+            <Button onClick={handleEditWorker} className="w-full bg-slate-900 hover:bg-slate-800" data-testid="save-edit-worker-btn">Guardar cambios</Button>
           </div>
         </DialogContent>
       </Dialog>
