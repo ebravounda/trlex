@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
-import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog, Inbox, DollarSign, CalendarCheck, FileSpreadsheet, MessageCircle, FileDown, Monitor, FileCheck } from 'lucide-react';
+import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog, Inbox, DollarSign, CalendarCheck, FileSpreadsheet, MessageCircle, FileDown, Monitor, FileCheck, Briefcase } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect, useCallback } from 'react';
 
@@ -22,6 +22,7 @@ const LOGO_URL = "https://tramilex.es/logo.png";
 const navItems = [
   { to: '/admin/clients', label: 'Clientes', icon: Users },
   { to: '/admin/empresas', label: 'Empresas', icon: Building2 },
+  { to: '/admin/personal', label: 'Personal', icon: Briefcase },
   { to: '/admin/citas', label: 'Citas', icon: CalendarCheck },
   { to: '/admin/tareas', label: 'Tareas', icon: ListTodo },
   { to: '/admin/contabilidad', label: 'Contabilidad', icon: DollarSign },

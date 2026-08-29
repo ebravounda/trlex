@@ -11,6 +11,7 @@ import AdminAudit from '@/pages/AdminAudit';
 import AdminCompresor from '@/pages/AdminCompresor';
 import AdminServidor from '@/pages/AdminServidor';
 import AdminFormularios from '@/pages/AdminFormularios';
+import AdminPersonal from '@/pages/AdminPersonal';
 import AdminTramites from '@/pages/AdminTramites';
 import AdminEmail from '@/pages/AdminEmail';
 import AdminEmpresas from '@/pages/AdminEmpresas';
@@ -95,6 +96,7 @@ function AppRoutes() {
         <Route path="compresor" element={<AdminCompresor />} />
         <Route path="servidor" element={<AdminServidor />} />
         <Route path="formularios" element={<AdminFormularios />} />
+        <Route path="personal" element={<AdminPersonal />} />
         <Route path="settings" element={<AdminSettings />} />
       </Route>
       <Route

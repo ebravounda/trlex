@@ -2447,6 +2447,39 @@ async def update_worker(company_id: str, worker_id: str, body: CompanyWorkerInpu
 
 # --- Company profession categories ---
 @api_router.get("/companies/{company_id}/professions")
+
+# --- Global Personal (all workers all companies) ---
+@api_router.get("/personal/all")
+async def get_all_workers(user=Depends(require_staff_or_admin)):
+    workers = []
+    async for w in db.company_workers.find().sort("profession", 1):
+        company = await db.companies.find_one({"_id": ObjectId(w["company_id"])})
+        doc_count = await db.company_documents.count_documents({"worker_id": str(w["_id"]), "is_deleted": False})
+        workers.append({
+            "id": str(w["_id"]),
+            "name": w.get("name", ""),
+            "last_name": w.get("last_name", ""),
+            "identification": w.get("identification", ""),
+            "phone": w.get("phone", ""),
+            "email": w.get("email", ""),
+            "nationality": w.get("nationality", ""),
+            "profession": w.get("profession", ""),
+            "company_id": w.get("company_id", ""),
+            "company_name": company.get("name", "") if company else "",
+            "doc_count": doc_count,
+        })
+    return workers
+
+@api_router.get("/personal/professions")
+async def get_all_professions(user=Depends(require_staff_or_admin)):
+    from_workers = await db.company_workers.distinct("profession")
+    from_custom = await db.company_professions.distinct("name")
+    all_profs = sorted(set([p for p in (from_workers + from_custom) if p]))
+    return all_profs
+
+
+# --- Company profession categories ---
+@api_router.get("/companies/{company_id}/professions")
 async def get_company_professions(company_id: str, user=Depends(get_current_user)):
     professions = await db.company_workers.distinct("profession", {"company_id": company_id})
     custom = await db.company_professions.find({"company_id": company_id}).to_list(100)
