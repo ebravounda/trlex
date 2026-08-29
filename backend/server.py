@@ -2592,6 +2592,7 @@ async def upload_worker_document(
     file: UploadFile = File(...),
     category: str = Form("otros"),
     uploaded_by: str = Form("admin"),
+    folder_id: str = Form(None),
     user=Depends(get_current_user)
 ):
     if user.get("role") not in ["admin", "company"]:
@@ -2615,6 +2616,7 @@ async def upload_worker_document(
     doc = {
         "company_id": company_id,
         "worker_id": worker_id,
+        "folder_id": folder_id if folder_id and folder_id != 'null' else None,
         "filename": stored_name,
         "original_filename": file.filename,
         "display_name": file.filename,
@@ -2624,7 +2626,8 @@ async def upload_worker_document(
         "status": "pending_review",
         "uploaded_by": uploaded_by,
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
-        "is_deleted": False
+        "is_deleted": False,
+        "storage_path": stored_name,
     }
     result = await db.company_documents.insert_one(doc)
 
@@ -2636,14 +2639,18 @@ async def upload_worker_document(
 
 
 @api_router.get("/companies/{company_id}/workers/{worker_id}/documents")
-async def list_worker_documents(company_id: str, worker_id: str, user=Depends(get_current_user)):
+async def list_worker_documents(company_id: str, worker_id: str, folder_id: str = None, user=Depends(get_current_user)):
     if user.get("role") not in ["admin", "company"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
+    query = {"worker_id": worker_id, "company_id": company_id, "is_deleted": False}
+    if folder_id:
+        query["folder_id"] = folder_id
+    else:
+        query["$or"] = [{"folder_id": None}, {"folder_id": {"$exists": False}}]
+
     docs = []
-    async for d in db.company_documents.find(
-        {"worker_id": worker_id, "company_id": company_id, "is_deleted": False}
-    ).sort("uploaded_at", -1):
+    async for d in db.company_documents.find(query).sort("uploaded_at", -1):
         docs.append({
             "id": str(d["_id"]),
             "original_filename": d.get("original_filename", ""),

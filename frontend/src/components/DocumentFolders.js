@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import api from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -43,16 +43,21 @@ export default function DocumentFolders({ companyId, workerId = null }) {
 
   const fetchDocs = async (folderId = null) => {
     try {
-      const params = folderId ? `?folder_id=${folderId}` : '';
-      const res = await api.get(`/companies/${companyId}/documents${params}`);
+      const folderParam = folderId ? `folder_id=${folderId}` : '';
+      let url;
+      if (workerId) {
+        url = `/companies/${companyId}/workers/${workerId}/documents${folderParam ? '?' + folderParam : ''}`;
+      } else {
+        url = `/companies/${companyId}/documents${folderParam ? '?' + folderParam : ''}`;
+      }
+      const res = await api.get(url);
       setDocs(res.data);
     } catch {}
   };
 
-  useState(() => {
+  useEffect(() => {
     fetchFolders();
     fetchDocs();
-    setLoaded(true);
   }, [companyId, workerId]);
 
   const handleCreateFolder = async () => {
@@ -112,7 +117,10 @@ export default function DocumentFolders({ companyId, workerId = null }) {
       fd.append('file', file);
       fd.append('category', 'otros');
       if (currentFolder) fd.append('folder_id', currentFolder);
-      try { await api.post(`/companies/${companyId}/documents/upload`, fd); count++; } catch { toast.error(`Error: ${file.name}`); }
+      const uploadUrl = workerId
+        ? `/companies/${companyId}/workers/${workerId}/documents/upload`
+        : `/companies/${companyId}/documents/upload`;
+      try { await api.post(uploadUrl, fd); count++; } catch { toast.error(`Error: ${file.name}`); }
     }
     if (count > 0) { toast.success(`${count} doc(s) subido(s)`); fetchDocs(currentFolder); }
     setUploading(false);

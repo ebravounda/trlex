@@ -603,7 +603,7 @@ export default function AdminEmpresaDetail() {
                   <div className="border-t border-slate-200 p-4 bg-slate-50/50">
                     {/* Worker details */}
                     {(w.identification || w.origin_country || w.residence_country || w.father_name || w.mother_name || w.children?.length > 0) && (
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-600 mb-3 p-3 bg-white border border-slate-200 rounded-lg">
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs text-slate-600 mb-4 p-3 bg-white border border-slate-200 rounded-lg">
                         {w.identification && <span><strong>DNI/NIE/Pasaporte/RUT:</strong> {w.identification}</span>}
                         {w.phone && <span><strong>Tel:</strong> {w.phone}</span>}
                         {w.email && <span><strong>Email:</strong> {w.email}</span>}
@@ -615,75 +615,8 @@ export default function AdminEmpresaDetail() {
                         {w.children?.length > 0 && <span><strong>Hijos:</strong> {w.children.join(', ')}</span>}
                       </div>
                     )}
-                    {/* Upload area */}
-                    <div className="flex items-center gap-3 mb-3">
-                      <Select value={uploadCategory} onValueChange={setUploadCategory}>
-                        <SelectTrigger className="w-40 h-8 text-xs bg-white">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        multiple
-                        accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.heic,.heif,image/*,application/pdf"
-                        className="hidden"
-                        onChange={e => handleUploadDocs(w.id, Array.from(e.target.files))}
-                      />
-                      <Button
-                        variant="outline" size="sm" className="gap-1 text-xs"
-                        onClick={() => fileInputRef.current?.click()}
-                        disabled={uploadingFor === w.id}
-                      >
-                        <Upload className="w-3.5 h-3.5" />
-                        {uploadingFor === w.id ? 'Subiendo...' : 'Subir documento'}
-                      </Button>
-                    </div>
-
-                    {/* Documents list */}
-                    {(workerDocs[w.id] || []).length === 0 ? (
-                      <p className="text-xs text-slate-500 text-center py-4">Sin documentos</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {(workerDocs[w.id] || []).map(doc => (
-                          <div key={doc.id} className={`flex items-center justify-between bg-white border rounded-lg p-3 ${doc.category === 'firmado' ? 'border-emerald-200 bg-emerald-50/30' : 'border-slate-200'}`}>
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              {getFileIcon(doc.content_type)}
-                              <div className="min-w-0">
-                                <p className="text-sm font-medium text-slate-800 truncate">{doc.display_name || doc.original_filename}</p>
-                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                  <span className="text-xs text-slate-500">{formatDate(doc.uploaded_at)}</span>
-                                  {doc.category === 'firmado' && <Badge className="bg-emerald-100 text-emerald-700 text-[10px]">Firmado</Badge>}
-                                  <Badge className={`text-[10px] ${doc.status === 'reviewed' ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
-                                    {doc.status === 'reviewed' ? 'Revisado' : 'Pendiente'}
-                                  </Badge>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-1 shrink-0">
-                              {doc.status !== 'reviewed' ? (
-                                <Button variant="ghost" size="sm" onClick={() => handleDocStatus(doc.id, w.id, 'reviewed')} title="Marcar revisado">
-                                  <Check className="w-3.5 h-3.5 text-emerald-600" />
-                                </Button>
-                              ) : (
-                                <Button variant="ghost" size="sm" onClick={() => handleDocStatus(doc.id, w.id, 'pending_review')} title="Marcar pendiente">
-                                  <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
-                                </Button>
-                              )}
-                              <Button variant="ghost" size="sm" onClick={() => handleDownloadDoc(doc)}>
-                                <Download className="w-3.5 h-3.5 text-slate-500" />
-                              </Button>
-                              <Button variant="ghost" size="sm" onClick={() => handleDeleteDoc(doc.id, w.id)}>
-                                <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    {/* Document Folders */}
+                    <DocumentFolders companyId={companyId} workerId={w.id} />
                   </div>
                 )}
               </div>
