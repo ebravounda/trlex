@@ -1600,6 +1600,52 @@ async def compress_pdf(
         raise HTTPException(status_code=500, detail=f"Error al comprimir: {str(e)}")
 
 
+
+# --- Company-level Documents ---
+@api_router.post("/companies/{company_id}/documents/upload")
+async def upload_company_doc(company_id: str, file: UploadFile = File(...), category: str = Form("otros"), user=Depends(require_staff_or_admin)):
+    company = await db.companies.find_one({"_id": ObjectId(company_id)})
+    if not company:
+        raise HTTPException(status_code=404, detail="Empresa no encontrada")
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Archivo supera 10MB")
+    ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "bin"
+    storage_path = f"{APP_NAME}/company_docs/{company_id}/{uuid.uuid4()}.{ext}"
+    result = put_object(storage_path, content, file.content_type or "application/octet-stream")
+    doc = {
+        "company_id": company_id,
+        "worker_id": None,
+        "original_filename": file.filename,
+        "display_name": file.filename,
+        "content_type": file.content_type or "application/octet-stream",
+        "category": category,
+        "status": "pending_review",
+        "uploaded_by": "admin",
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "is_deleted": False,
+        "storage_path": result.get("path", storage_path),
+    }
+    result = await db.company_documents.insert_one(doc)
+    return {"id": str(result.inserted_id), "filename": file.filename}
+
+@api_router.get("/companies/{company_id}/documents")
+async def get_company_docs(company_id: str, user=Depends(require_staff_or_admin)):
+    docs = []
+    async for d in db.company_documents.find(
+        {"company_id": company_id, "worker_id": None, "is_deleted": False}
+    ).sort("uploaded_at", -1):
+        d["id"] = str(d["_id"])
+        del d["_id"]
+        docs.append(d)
+    return docs
+
+@api_router.delete("/companies/{company_id}/documents/{doc_id}")
+async def delete_company_doc(company_id: str, doc_id: str, user=Depends(require_staff_or_admin)):
+    await db.company_documents.update_one({"_id": ObjectId(doc_id), "company_id": company_id}, {"$set": {"is_deleted": True}})
+    return {"message": "Documento eliminado"}
+
+
 # --- Settings Routes ---
 @api_router.get("/settings/smtp")
 async def get_smtp_settings(user=Depends(require_admin)):

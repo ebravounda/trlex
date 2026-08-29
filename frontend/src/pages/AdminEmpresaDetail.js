@@ -57,10 +57,14 @@ export default function AdminEmpresaDetail() {
   const [sendMode, setSendMode] = useState('registro');
   const fileInputRef = useRef(null);
   const signReqInputRef = useRef(null);
+  const companyDocInputRef = useRef(null);
   const [uploadingFor, setUploadingFor] = useState(null);
   const [uploadCategory, setUploadCategory] = useState('otros');
   const [signRequests, setSignRequests] = useState([]);
   const [uploadingSignReq, setUploadingSignReq] = useState(false);
+  const [companyDocs, setCompanyDocs] = useState([]);
+  const [uploadingCompanyDoc, setUploadingCompanyDoc] = useState(false);
+  const [companyDocCategory, setCompanyDocCategory] = useState('otros');
 
   const [workerForm, setWorkerForm] = useState({ name: '', last_name: '', identification: '', phone: '', email: '', nationality: '' });
   const [tramiteForm, setTramiteForm] = useState({ country: '', tramite_id: '', notes: '' });
@@ -89,6 +93,42 @@ export default function AdminEmpresaDetail() {
   }, [companyId]);
 
   useEffect(() => { fetchSignRequests(); }, [fetchSignRequests]);
+
+  const fetchCompanyDocs = useCallback(async () => {
+    try { const res = await api.get(`/companies/${companyId}/documents`); setCompanyDocs(res.data); } catch {}
+  }, [companyId]);
+
+  useEffect(() => { fetchCompanyDocs(); }, [fetchCompanyDocs]);
+
+  const handleUploadCompanyDoc = async (files) => {
+    if (!files?.length) return;
+    setUploadingCompanyDoc(true);
+    let count = 0;
+    for (const file of files) {
+      if (file.size > 10 * 1024 * 1024) { toast.error(`${file.name} supera 10MB`); continue; }
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('category', companyDocCategory);
+      try { await api.post(`/companies/${companyId}/documents/upload`, fd); count++; } catch { toast.error(`Error subiendo ${file.name}`); }
+    }
+    if (count > 0) { toast.success(`${count} documento(s) subido(s)`); fetchCompanyDocs(); }
+    setUploadingCompanyDoc(false);
+  };
+
+  const handleDownloadCompanyDoc = async (doc) => {
+    try {
+      const res = await api.get(`/company-documents/${doc.id}/download`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url; a.download = doc.original_filename; a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { toast.error('Error descargando'); }
+  };
+
+  const handleDeleteCompanyDoc = async (docId) => {
+    if (!window.confirm('Eliminar documento?')) return;
+    try { await api.delete(`/companies/${companyId}/documents/${docId}`); fetchCompanyDocs(); toast.success('Eliminado'); } catch { toast.error('Error'); }
+  };
 
   const handleUploadSignRequest = async (files) => {
     if (!files?.length) return;
@@ -341,6 +381,76 @@ export default function AdminEmpresaDetail() {
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-2">Datos de acceso</p>
           <p className="text-sm text-slate-700"><strong>Usuario (CIF/NIF):</strong> {company.cif_nif}</p>
           <p className="text-sm text-slate-700"><strong>Contrasena:</strong> {company.password_plain || '****'}</p>
+        </div>
+      </div>
+
+      {/* Company Documents Section */}
+      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden" data-testid="company-docs-section">
+        <div className="px-6 py-5 border-b border-slate-100 bg-gradient-to-r from-slate-50 to-white">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-sky-100 flex items-center justify-center">
+                <FileText className="w-5 h-5 text-sky-600" />
+              </div>
+              <div>
+                <h2 className="text-base font-semibold text-slate-900">Documentos Empresa</h2>
+                <p className="text-xs text-slate-500">{companyDocs.length} documento(s) cargados</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Select value={companyDocCategory} onValueChange={setCompanyDocCategory}>
+                <SelectTrigger className="w-36 h-9 text-xs bg-white"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map(c => <SelectItem key={c.value} value={c.value}>{c.label}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <input ref={companyDocInputRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx,application/pdf,image/*" className="hidden"
+                onChange={e => { handleUploadCompanyDoc(Array.from(e.target.files)); e.target.value = ''; }} />
+              <Button className="gap-2 h-9 bg-slate-900 hover:bg-slate-800 text-sm" onClick={() => companyDocInputRef.current?.click()} disabled={uploadingCompanyDoc} data-testid="upload-company-doc-btn">
+                <Upload className="w-4 h-4" /> {uploadingCompanyDoc ? 'Subiendo...' : 'Subir documento'}
+              </Button>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-6">
+          {companyDocs.length === 0 ? (
+            <div className="border-2 border-dashed border-slate-200 rounded-xl p-10 text-center cursor-pointer hover:border-slate-300 hover:bg-slate-50/50 transition-colors"
+              onClick={() => companyDocInputRef.current?.click()}>
+              <Upload className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+              <p className="text-sm font-medium text-slate-600">Sube los documentos de la empresa</p>
+              <p className="text-xs text-slate-400 mt-1">PDF, imagenes, Word, Excel — max 10MB por archivo</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {companyDocs.map(doc => (
+                <div key={doc.id} className="flex items-center gap-3 border border-slate-200 rounded-xl p-4 hover:shadow-sm transition-shadow group" data-testid={`company-doc-${doc.id}`}>
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 ${
+                    doc.content_type?.startsWith('image/') ? 'bg-sky-50' : 'bg-red-50'
+                  }`}>
+                    {doc.content_type?.startsWith('image/')
+                      ? <ImageIcon className="w-5 h-5 text-sky-500" />
+                      : <FileText className="w-5 h-5 text-red-500" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{doc.display_name || doc.original_filename}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      <Badge className="text-[10px] bg-slate-100 text-slate-600 border-0">{CATEGORIES.find(c => c.value === doc.category)?.label || doc.category}</Badge>
+                      <span className="text-[11px] text-slate-400">{formatDate(doc.uploaded_at)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleDownloadCompanyDoc(doc)}>
+                      <Download className="w-4 h-4 text-slate-500" />
+                    </Button>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0" onClick={() => handleDeleteCompanyDoc(doc.id)}>
+                      <Trash2 className="w-4 h-4 text-red-500" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
