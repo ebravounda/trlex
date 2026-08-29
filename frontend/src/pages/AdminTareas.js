@@ -9,38 +9,167 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { toast } from 'sonner';
 import {
-  Plus, ListTodo, MessageSquare, Trash2, Clock, User, ChevronDown, ChevronUp,
-  Send, CalendarDays, Flag, CircleDot, CheckCircle2, Timer, Search, SlidersHorizontal
+  Plus, ListTodo, MessageSquare, Trash2, User, Send, CalendarDays,
+  CircleDot, CheckCircle2, Timer, Search, LayoutGrid, List, Clock
 } from 'lucide-react';
 
 const PRIORITIES = [
-  { value: 'baja', label: 'Baja', color: 'text-slate-600', bg: 'bg-slate-50', border: 'border-slate-300', dot: 'bg-slate-400' },
-  { value: 'media', label: 'Media', color: 'text-amber-700', bg: 'bg-amber-50', border: 'border-amber-400', dot: 'bg-amber-500' },
-  { value: 'alta', label: 'Alta', color: 'text-red-700', bg: 'bg-red-50', border: 'border-red-500', dot: 'bg-red-500' },
+  { value: 'baja', label: 'Baja', color: 'text-slate-500', bg: 'bg-slate-100', dot: 'bg-slate-400' },
+  { value: 'media', label: 'Media', color: 'text-amber-600', bg: 'bg-amber-50', dot: 'bg-amber-500' },
+  { value: 'alta', label: 'Alta', color: 'text-red-600', bg: 'bg-red-50', dot: 'bg-red-500' },
+];
+
+const COLUMNS = [
+  { key: 'pendiente', label: 'Pendientes', icon: CircleDot, accent: 'amber', dot: 'bg-amber-500', headerBg: 'bg-amber-50', headerBorder: 'border-amber-200', headerText: 'text-amber-800' },
+  { key: 'en_proceso', label: 'En proceso', icon: Timer, accent: 'blue', dot: 'bg-blue-500', headerBg: 'bg-blue-50', headerBorder: 'border-blue-200', headerText: 'text-blue-800' },
+  { key: 'completada', label: 'Completadas', icon: CheckCircle2, accent: 'emerald', dot: 'bg-emerald-500', headerBg: 'bg-emerald-50', headerBorder: 'border-emerald-200', headerText: 'text-emerald-800' },
 ];
 
 const STATUSES = [
-  { value: 'pendiente', label: 'Pendiente', color: 'text-amber-800', bg: 'bg-amber-100', border: 'border-amber-200', dot: 'bg-amber-500', icon: CircleDot },
-  { value: 'en_proceso', label: 'En proceso', color: 'text-blue-800', bg: 'bg-blue-100', border: 'border-blue-200', dot: 'bg-blue-500', icon: Timer },
-  { value: 'completada', label: 'Completada', color: 'text-emerald-800', bg: 'bg-emerald-100', border: 'border-emerald-200', dot: 'bg-emerald-500', icon: CheckCircle2 },
+  { value: 'pendiente', label: 'Pendiente', dot: 'bg-amber-500', icon: CircleDot },
+  { value: 'en_proceso', label: 'En proceso', dot: 'bg-blue-500', icon: Timer },
+  { value: 'completada', label: 'Completada', dot: 'bg-emerald-500', icon: CheckCircle2 },
 ];
 
 function formatDate(iso) {
   if (!iso) return '-';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-  } catch { return '-'; }
+  try { return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch { return '-'; }
 }
 
 function timeAgo(iso) {
   if (!iso) return '';
-  const d = new Date(iso);
-  const diff = Date.now() - d;
+  const diff = Date.now() - new Date(iso);
   if (diff < 60000) return 'Ahora';
   if (diff < 3600000) return `${Math.floor(diff / 60000)}m`;
   if (diff < 86400000) return `${Math.floor(diff / 3600000)}h`;
   return `${Math.floor(diff / 86400000)}d`;
+}
+
+function getInitials(name) {
+  if (!name) return '?';
+  return name.split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase();
+}
+
+const AVATAR_COLORS = ['bg-violet-600', 'bg-sky-600', 'bg-rose-600', 'bg-teal-600', 'bg-orange-600', 'bg-indigo-600', 'bg-pink-600', 'bg-cyan-600'];
+function avatarColor(name) {
+  let h = 0;
+  for (let i = 0; i < (name || '').length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+}
+
+function TaskCard({ task, onStatusChange, onDelete, onExpand, isExpanded, taskDetail, newComment, setNewComment, onAddComment, user }) {
+  const pri = PRIORITIES.find(x => x.value === task.priority) || PRIORITIES[1];
+  const isOverdue = task.due_date && new Date(task.due_date) < new Date() && task.status !== 'completada';
+
+  return (
+    <div className={`bg-white rounded-xl border transition-all duration-200 hover:shadow-md ${isExpanded ? 'border-slate-300 shadow-md' : 'border-slate-200 shadow-sm'}`}
+      data-testid={`task-card-${task.id}`}>
+      <div className="p-4 cursor-pointer" onClick={() => onExpand(task.id)}>
+        {/* Priority + Due */}
+        <div className="flex items-center justify-between mb-2.5">
+          <Badge className={`text-[10px] font-bold uppercase tracking-wider ${pri.bg} ${pri.color} border-0 px-2 py-0.5`}>
+            {pri.label}
+          </Badge>
+          <div className="flex items-center gap-2">
+            {task.comments_count > 0 && (
+              <span className="flex items-center gap-0.5 text-[11px] text-slate-400">
+                <MessageSquare className="w-3 h-3" /> {task.comments_count}
+              </span>
+            )}
+            <span className="text-[11px] text-slate-400">{timeAgo(task.created_at)}</span>
+          </div>
+        </div>
+
+        {/* Title */}
+        <p className={`text-sm font-semibold leading-snug mb-3 ${task.status === 'completada' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+          {task.title}
+        </p>
+
+        {/* Footer */}
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div className={`w-6 h-6 rounded-full ${avatarColor(task.assigned_to_name)} flex items-center justify-center`}>
+              <span className="text-[9px] font-bold text-white">{getInitials(task.assigned_to_name)}</span>
+            </div>
+            <span className="text-xs text-slate-500 truncate max-w-[120px]">{task.assigned_to_name}</span>
+          </div>
+          {task.due_date && (
+            <span className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md ${
+              isOverdue ? 'bg-red-50 text-red-600' : 'bg-slate-50 text-slate-500'
+            }`}>
+              <CalendarDays className="w-3 h-3" /> {task.due_date}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Expanded */}
+      {isExpanded && taskDetail && (
+        <div className="border-t border-slate-100 p-4 space-y-3 bg-slate-50/50 rounded-b-xl">
+          {taskDetail.description && (
+            <p className="text-sm text-slate-600 leading-relaxed">{taskDetail.description}</p>
+          )}
+          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+            <span>Creada por <strong>{taskDetail.created_by_name}</strong></span>
+            <span>{formatDate(taskDetail.created_at)}</span>
+          </div>
+
+          {/* Status change */}
+          <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+            <Select value={task.status} onValueChange={v => onStatusChange(task.id, v)}>
+              <SelectTrigger className="h-8 text-xs rounded-lg flex-1">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {STATUSES.map(st => (
+                  <SelectItem key={st.value} value={st.value}>
+                    <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${st.dot}`} /> {st.label}</div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button variant="ghost" size="sm" className="h-8 w-8 p-0 text-slate-400 hover:text-red-500" onClick={e => { e.stopPropagation(); onDelete(task.id); }}>
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+
+          {/* Comments */}
+          {taskDetail.comments?.length > 0 && (
+            <div className="space-y-2 pt-1">
+              {taskDetail.comments.map(c => (
+                <div key={c.id} className="flex gap-2">
+                  <div className={`w-6 h-6 rounded-full ${avatarColor(c.user_name)} flex items-center justify-center shrink-0 mt-0.5`}>
+                    <span className="text-[8px] font-bold text-white">{getInitials(c.user_name)}</span>
+                  </div>
+                  <div className="flex-1 bg-white rounded-lg border border-slate-200 p-2.5">
+                    <div className="flex items-center justify-between mb-0.5">
+                      <span className="text-[11px] font-semibold text-slate-700">{c.user_name}</span>
+                      <span className="text-[10px] text-slate-400">{timeAgo(c.created_at)}</span>
+                    </div>
+                    <p className="text-xs text-slate-600">{c.text}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add comment */}
+          <div className="flex items-center gap-2 pt-1">
+            <div className={`w-6 h-6 rounded-full ${avatarColor(user?.name)} flex items-center justify-center shrink-0`}>
+              <span className="text-[8px] font-bold text-white">{getInitials(user?.name)}</span>
+            </div>
+            <Input value={newComment} onChange={e => setNewComment(e.target.value)}
+              placeholder="Comentar..." className="flex-1 h-8 text-xs bg-white rounded-lg"
+              onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); onAddComment(task.id); } }}
+              data-testid="task-comment-input" />
+            <Button size="sm" className="h-8 w-8 p-0 bg-slate-900 hover:bg-slate-800 rounded-lg" onClick={() => onAddComment(task.id)}>
+              <Send className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export default function AdminTareas() {
@@ -51,8 +180,8 @@ export default function AdminTareas() {
   const [expandedTask, setExpandedTask] = useState(null);
   const [taskDetail, setTaskDetail] = useState(null);
   const [newComment, setNewComment] = useState('');
-  const [filter, setFilter] = useState('all');
   const [search, setSearch] = useState('');
+  const [viewMode, setViewMode] = useState('kanban');
   const [form, setForm] = useState({ title: '', description: '', priority: 'media', assigned_to: '', due_date: '' });
 
   const fetchTasks = useCallback(async () => {
@@ -70,12 +199,12 @@ export default function AdminTareas() {
       setForm({ title: '', description: '', priority: 'media', assigned_to: '', due_date: '' });
       setShowCreate(false);
       fetchTasks();
-      toast.success('Tarea creada exitosamente');
+      toast.success('Tarea creada');
     } catch (err) { toast.error(err.response?.data?.detail || 'Error'); }
   };
 
   const handleStatusChange = async (taskId, newStatus) => {
-    try { await api.put(`/tasks/${taskId}`, { status: newStatus }); fetchTasks(); toast.success('Estado actualizado'); } catch { toast.error('Error'); }
+    try { await api.put(`/tasks/${taskId}`, { status: newStatus }); fetchTasks(); } catch { toast.error('Error'); }
   };
 
   const toggleTask = async (taskId) => {
@@ -92,284 +221,196 @@ export default function AdminTareas() {
       const res = await api.get(`/tasks/${taskId}`);
       setTaskDetail(res.data);
       fetchTasks();
-      toast.success('Comentario agregado');
     } catch { toast.error('Error'); }
   };
 
   const handleDelete = async (taskId) => {
     if (!window.confirm('Eliminar esta tarea?')) return;
-    try { await api.delete(`/tasks/${taskId}`); fetchTasks(); setExpandedTask(null); toast.success('Tarea eliminada'); } catch { toast.error('Error'); }
+    try { await api.delete(`/tasks/${taskId}`); fetchTasks(); setExpandedTask(null); toast.success('Eliminada'); } catch { toast.error('Error'); }
   };
 
-  const userId = user?._id || user?.id;
-  const filtered = tasks.filter(t => {
-    const matchFilter = filter === 'all' || (filter === 'mine' && t.assigned_to === userId) ||
-      (filter === 'created' && t.created_by === userId) || t.status === filter;
-    const matchSearch = !search.trim() || t.title.toLowerCase().includes(search.toLowerCase()) ||
-      t.assigned_to_name.toLowerCase().includes(search.toLowerCase());
-    return matchFilter && matchSearch;
-  });
+  const filtered = tasks.filter(t =>
+    !search.trim() || t.title.toLowerCase().includes(search.toLowerCase()) || t.assigned_to_name.toLowerCase().includes(search.toLowerCase())
+  );
 
-  const p = (v) => PRIORITIES.find(x => x.value === v) || PRIORITIES[1];
-  const s = (v) => STATUSES.find(x => x.value === v) || STATUSES[0];
-
-  const pendingCount = tasks.filter(t => t.status === 'pendiente').length;
-  const processCount = tasks.filter(t => t.status === 'en_proceso').length;
+  const total = tasks.length;
   const doneCount = tasks.filter(t => t.status === 'completada').length;
+  const progress = total > 0 ? Math.round((doneCount / total) * 100) : 0;
 
   return (
-    <div className="space-y-8" data-testid="admin-tareas">
+    <div className="space-y-6" data-testid="admin-tareas">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1">Gestion</p>
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>Tareas</h1>
         </div>
-        <Button onClick={() => setShowCreate(true)} className="bg-slate-900 hover:bg-slate-800 gap-2 h-11 px-5 rounded-lg" data-testid="create-task-btn">
-          <Plus className="w-4 h-4" /> Nueva tarea
-        </Button>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {[
-          { label: 'Pendientes', count: pendingCount, icon: CircleDot, iconColor: 'text-amber-500', bgIcon: 'bg-amber-50' },
-          { label: 'En proceso', count: processCount, icon: Timer, iconColor: 'text-blue-500', bgIcon: 'bg-blue-50' },
-          { label: 'Completadas', count: doneCount, icon: CheckCircle2, iconColor: 'text-emerald-500', bgIcon: 'bg-emerald-50' },
-        ].map(st => (
-          <div key={st.label} className="bg-white border border-slate-200 rounded-xl p-6 flex items-center justify-between">
-            <div>
-              <p className="text-4xl font-semibold tracking-tight text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>{st.count}</p>
-              <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mt-1">{st.label}</p>
-            </div>
-            <div className={`w-12 h-12 rounded-xl ${st.bgIcon} flex items-center justify-center`}>
-              <st.icon className={`w-6 h-6 ${st.iconColor}`} strokeWidth={1.5} />
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Filters & Search */}
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg p-1 overflow-x-auto">
-          {[
-            { v: 'all', l: 'Todas' }, { v: 'mine', l: 'Mis tareas' }, { v: 'created', l: 'Creadas' },
-            { v: 'pendiente', l: 'Pendientes' }, { v: 'en_proceso', l: 'En proceso' }, { v: 'completada', l: 'Completadas' }
-          ].map(f => (
-            <button key={f.v} onClick={() => setFilter(f.v)} data-testid={`filter-tab-${f.v}`}
-              className={`px-3 py-1.5 rounded-md text-xs font-medium whitespace-nowrap transition-colors ${filter === f.v ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-100'}`}>
-              {f.l}
+        <div className="flex items-center gap-3">
+          {/* View toggle */}
+          <div className="flex bg-slate-100 rounded-lg p-0.5">
+            <button onClick={() => setViewMode('kanban')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'kanban' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'}`} data-testid="view-kanban-btn">
+              <LayoutGrid className="w-4 h-4" />
             </button>
-          ))}
-        </div>
-        <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 flex-1">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
-          <Input placeholder="Buscar tarea..." value={search} onChange={e => setSearch(e.target.value)}
-            className="border-0 focus-visible:ring-0 p-0 h-9 text-sm" data-testid="task-search" />
+            <button onClick={() => setViewMode('list')} className={`p-1.5 rounded-md transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-slate-900' : 'text-slate-400'}`} data-testid="view-list-btn">
+              <List className="w-4 h-4" />
+            </button>
+          </div>
+          <Button onClick={() => setShowCreate(true)} className="bg-slate-900 hover:bg-slate-800 gap-2 h-10 px-5 rounded-lg text-sm" data-testid="create-task-btn">
+            <Plus className="w-4 h-4" /> Nueva tarea
+          </Button>
         </div>
       </div>
 
-      {/* Task List */}
-      {filtered.length === 0 ? (
-        <div className="bg-white border border-slate-200 rounded-xl p-16 text-center">
-          <ListTodo className="w-12 h-12 text-slate-200 mx-auto mb-4" strokeWidth={1} />
-          <p className="text-sm text-slate-500 mb-1">No hay tareas{search ? ' con esa busqueda' : ''}</p>
-          <p className="text-xs text-slate-400">Crea una nueva tarea para empezar</p>
-        </div>
-      ) : (
-        <div className="bg-white border border-slate-200 rounded-xl overflow-hidden divide-y divide-slate-100">
-          {filtered.map(t => {
-            const pri = p(t.priority);
-            const sts = s(t.status);
-            const StsIcon = sts.icon;
-            const isExpanded = expandedTask === t.id;
-
-            return (
-              <div key={t.id} className={`transition-colors ${isExpanded ? 'bg-slate-50/50' : ''}`}>
-                {/* Task Row */}
-                <div className={`flex items-center gap-4 px-5 py-4 cursor-pointer hover:bg-slate-50/80 transition-colors border-l-4 ${pri.border}`}
-                  onClick={() => toggleTask(t.id)} data-testid={`task-row-${t.id}`}>
-
-                  {/* Status dot */}
-                  <div className={`w-2.5 h-2.5 rounded-full ${sts.dot} shrink-0`} />
-
-                  {/* Content */}
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
-                      <p className={`text-sm font-medium truncate ${t.status === 'completada' ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
-                        {t.title}
-                      </p>
-                      {t.comments_count > 0 && (
-                        <span className="flex items-center gap-0.5 text-xs text-slate-400 shrink-0">
-                          <MessageSquare className="w-3 h-3" /> {t.comments_count}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-3 mt-1">
-                      <span className="flex items-center gap-1 text-xs text-slate-500">
-                        <User className="w-3 h-3" /> {t.assigned_to_name}
-                      </span>
-                      {t.due_date && (
-                        <span className="flex items-center gap-1 text-xs text-slate-400">
-                          <CalendarDays className="w-3 h-3" /> {t.due_date}
-                        </span>
-                      )}
-                      <span className="text-xs text-slate-400">{timeAgo(t.created_at)}</span>
-                    </div>
-                  </div>
-
-                  {/* Right side */}
-                  <div className="flex items-center gap-2 shrink-0" onClick={e => e.stopPropagation()}>
-                    <Badge className={`text-[10px] font-bold uppercase tracking-wider ${pri.bg} ${pri.color} border-0 px-2`}>
-                      {t.priority}
-                    </Badge>
-                    <Select value={t.status} onValueChange={v => handleStatusChange(t.id, v)}>
-                      <SelectTrigger className={`h-7 w-32 text-xs rounded-md ${sts.bg} ${sts.color} border-0 font-medium`}>
-                        <div className="flex items-center gap-1.5">
-                          <StsIcon className="w-3 h-3" />
-                          <SelectValue />
-                        </div>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {STATUSES.map(st => (
-                          <SelectItem key={st.value} value={st.value}>
-                            <div className="flex items-center gap-2">
-                              <div className={`w-2 h-2 rounded-full ${st.dot}`} />
-                              {st.label}
-                            </div>
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-slate-400 hover:text-red-500" onClick={() => handleDelete(t.id)}>
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </Button>
-                    <ChevronDown className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${isExpanded ? 'rotate-180' : ''}`} />
+      {/* Progress bar */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5">
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-6">
+            <div>
+              <p className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>{total}</p>
+              <p className="text-[11px] uppercase tracking-wider text-slate-500 font-semibold">Total</p>
+            </div>
+            {COLUMNS.map(col => {
+              const count = tasks.filter(t => t.status === col.key).length;
+              return (
+                <div key={col.key} className="flex items-center gap-2">
+                  <div className={`w-2.5 h-2.5 rounded-full ${col.dot}`} />
+                  <div>
+                    <p className="text-lg font-bold text-slate-900">{count}</p>
+                    <p className="text-[10px] uppercase tracking-wider text-slate-400">{col.label}</p>
                   </div>
                 </div>
+              );
+            })}
+          </div>
+          <div className="text-right">
+            <p className="text-2xl font-bold text-emerald-600">{progress}%</p>
+            <p className="text-[10px] uppercase tracking-wider text-slate-400">Progreso</p>
+          </div>
+        </div>
+        <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+          <div className="h-full bg-emerald-500 rounded-full transition-all duration-500" style={{ width: `${progress}%` }} />
+        </div>
+      </div>
 
-                {/* Expanded Detail */}
-                {isExpanded && taskDetail && (
-                  <div className="px-5 pb-5 pt-2 border-t border-slate-100 bg-slate-50/80">
-                    {/* Meta */}
-                    {taskDetail.description && (
-                      <p className="text-sm text-slate-600 mb-4 leading-relaxed">{taskDetail.description}</p>
-                    )}
-                    <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-slate-500 mb-5">
-                      <span>Creada por <strong className="text-slate-700">{taskDetail.created_by_name}</strong></span>
-                      <span>Asignada a <strong className="text-slate-700">{taskDetail.assigned_to_name}</strong></span>
-                      {taskDetail.due_date && <span>Vence <strong className="text-slate-700">{taskDetail.due_date}</strong></span>}
-                      <span>{formatDate(taskDetail.created_at)}</span>
-                    </div>
+      {/* Search */}
+      <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-1">
+        <Search className="w-4 h-4 text-slate-400 shrink-0" />
+        <Input placeholder="Buscar tarea o persona..." value={search} onChange={e => setSearch(e.target.value)}
+          className="border-0 focus-visible:ring-0 p-0 h-10 text-sm" data-testid="task-search" />
+      </div>
 
-                    {/* Comments timeline */}
-                    <div>
-                      <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-3">
-                        Comentarios ({taskDetail.comments?.length || 0})
-                      </p>
-
-                      {taskDetail.comments?.length > 0 && (
-                        <div className="relative ml-3 mb-4">
-                          {/* Timeline line */}
-                          <div className="absolute left-0 top-0 bottom-0 w-0.5 bg-slate-200" />
-                          <div className="space-y-3 pl-6">
-                            {taskDetail.comments.map(c => (
-                              <div key={c.id} className="relative">
-                                {/* Timeline dot */}
-                                <div className="absolute -left-[25px] top-2 w-2.5 h-2.5 rounded-full bg-slate-300 border-2 border-white" />
-                                <div className="bg-white border border-slate-200 rounded-lg p-3">
-                                  <div className="flex items-center justify-between mb-1">
-                                    <span className="text-xs font-semibold text-slate-700">{c.user_name}</span>
-                                    <span className="text-[10px] text-slate-400">{formatDate(c.created_at)}</span>
-                                  </div>
-                                  <p className="text-sm text-slate-600 leading-relaxed">{c.text}</p>
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Add comment */}
-                      <div className="flex items-center gap-2">
-                        <div className="w-8 h-8 rounded-full bg-slate-900 flex items-center justify-center shrink-0">
-                          <span className="text-[10px] font-bold text-white">{(user?.name || 'U').charAt(0).toUpperCase()}</span>
-                        </div>
-                        <Input value={newComment} onChange={e => setNewComment(e.target.value)}
-                          placeholder="Escribe un comentario..." className="flex-1 h-9 text-sm bg-white"
-                          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleAddComment(t.id); } }}
-                          data-testid="task-comment-input" />
-                        <Button size="sm" className="h-9 w-9 p-0 bg-slate-900 hover:bg-slate-800 rounded-lg" onClick={() => handleAddComment(t.id)} data-testid="task-comment-send">
-                          <Send className="w-4 h-4" />
-                        </Button>
-                      </div>
-                    </div>
+      {/* Kanban View */}
+      {viewMode === 'kanban' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+          {COLUMNS.map(col => {
+            const colTasks = filtered.filter(t => t.status === col.key);
+            const ColIcon = col.icon;
+            return (
+              <div key={col.key} className="space-y-3" data-testid={`column-${col.key}`}>
+                {/* Column header */}
+                <div className={`flex items-center justify-between px-4 py-2.5 rounded-xl border ${col.headerBg} ${col.headerBorder}`}>
+                  <div className="flex items-center gap-2">
+                    <ColIcon className={`w-4 h-4 ${col.headerText}`} strokeWidth={2} />
+                    <span className={`text-sm font-semibold ${col.headerText}`}>{col.label}</span>
                   </div>
-                )}
+                  <span className={`text-xs font-bold ${col.headerText} bg-white/60 px-2 py-0.5 rounded-md`}>{colTasks.length}</span>
+                </div>
+
+                {/* Cards */}
+                <div className="space-y-3 min-h-[100px]">
+                  {colTasks.length === 0 && (
+                    <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center">
+                      <p className="text-xs text-slate-400">Sin tareas</p>
+                    </div>
+                  )}
+                  {colTasks.map(task => (
+                    <TaskCard key={task.id} task={task}
+                      onStatusChange={handleStatusChange} onDelete={handleDelete}
+                      onExpand={toggleTask} isExpanded={expandedTask === task.id}
+                      taskDetail={expandedTask === task.id ? taskDetail : null}
+                      newComment={newComment} setNewComment={setNewComment}
+                      onAddComment={handleAddComment} user={user} />
+                  ))}
+                </div>
               </div>
             );
           })}
         </div>
       )}
 
-      {/* Create Task Dialog */}
+      {/* List View */}
+      {viewMode === 'list' && (
+        <div className="space-y-3">
+          {filtered.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-xl p-16 text-center">
+              <ListTodo className="w-12 h-12 text-slate-200 mx-auto mb-4" strokeWidth={1} />
+              <p className="text-sm text-slate-500">No hay tareas</p>
+            </div>
+          ) : filtered.map(task => (
+            <TaskCard key={task.id} task={task}
+              onStatusChange={handleStatusChange} onDelete={handleDelete}
+              onExpand={toggleTask} isExpanded={expandedTask === task.id}
+              taskDetail={expandedTask === task.id ? taskDetail : null}
+              newComment={newComment} setNewComment={setNewComment}
+              onAddComment={handleAddComment} user={user} />
+          ))}
+        </div>
+      )}
+
+      {/* Create Dialog */}
       <Dialog open={showCreate} onOpenChange={setShowCreate}>
-        <DialogContent className="max-w-md rounded-xl">
+        <DialogContent className="max-w-md rounded-2xl">
           <DialogHeader>
-            <p className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500">Nueva</p>
-            <DialogTitle className="text-xl font-semibold tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>Crear tarea</DialogTitle>
+            <DialogTitle className="text-xl font-semibold tracking-tight" style={{ fontFamily: 'Manrope, sans-serif' }}>Nueva tarea</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 mt-2">
             <div>
-              <label className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5 block">Titulo</label>
+              <label className="text-xs font-medium text-slate-600 mb-1.5 block">Titulo *</label>
               <Input placeholder="Que se necesita hacer?" value={form.title} onChange={e => setForm({...form, title: e.target.value})}
-                className="h-10 bg-white" data-testid="task-title-input" />
+                className="h-10 bg-white" data-testid="task-title-input" autoFocus />
             </div>
             <div>
-              <label className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5 block">Descripcion</label>
-              <Textarea placeholder="Detalles adicionales..." value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="bg-white" />
+              <label className="text-xs font-medium text-slate-600 mb-1.5 block">Descripcion</label>
+              <Textarea placeholder="Detalles adicionales..." value={form.description} onChange={e => setForm({...form, description: e.target.value})} className="bg-white" rows={3} />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5 block">Prioridad</label>
+                <label className="text-xs font-medium text-slate-600 mb-1.5 block">Prioridad</label>
                 <Select value={form.priority} onValueChange={v => setForm({...form, priority: v})}>
                   <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     {PRIORITIES.map(pr => (
                       <SelectItem key={pr.value} value={pr.value}>
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${pr.dot}`} /> {pr.label}
-                        </div>
+                        <div className="flex items-center gap-2"><div className={`w-2 h-2 rounded-full ${pr.dot}`} /> {pr.label}</div>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div>
-                <label className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5 block">Fecha limite</label>
+                <label className="text-xs font-medium text-slate-600 mb-1.5 block">Fecha limite</label>
                 <Input type="date" value={form.due_date} onChange={e => setForm({...form, due_date: e.target.value})} className="h-10" />
               </div>
             </div>
             <div>
-              <label className="text-xs font-bold uppercase tracking-[0.15em] text-slate-500 mb-1.5 block">Asignar a</label>
+              <label className="text-xs font-medium text-slate-600 mb-1.5 block">Asignar a *</label>
               <Select value={form.assigned_to} onValueChange={v => setForm({...form, assigned_to: v})}>
-                <SelectTrigger className="h-10" data-testid="task-assign-select"><SelectValue placeholder="Seleccionar miembro..." /></SelectTrigger>
+                <SelectTrigger className="h-10" data-testid="task-assign-select"><SelectValue placeholder="Seleccionar..." /></SelectTrigger>
                 <SelectContent>
                   {staff.map(st => (
                     <SelectItem key={st.id} value={st.id}>
                       <div className="flex items-center gap-2">
-                        <div className="w-5 h-5 rounded-full bg-slate-200 flex items-center justify-center">
-                          <span className="text-[9px] font-bold text-slate-600">{st.name.charAt(0)}</span>
+                        <div className={`w-5 h-5 rounded-full ${avatarColor(st.name)} flex items-center justify-center`}>
+                          <span className="text-[8px] font-bold text-white">{getInitials(st.name)}</span>
                         </div>
                         {st.name}
-                        <span className="text-slate-400 text-xs">({st.position || st.email})</span>
                       </div>
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-            <Button onClick={handleCreate} className="w-full h-11 bg-slate-900 hover:bg-slate-800 rounded-lg font-medium" data-testid="submit-task-btn">
+            <Button onClick={handleCreate} className="w-full h-11 bg-slate-900 hover:bg-slate-800 rounded-xl font-medium" data-testid="submit-task-btn">
               Crear tarea
             </Button>
           </div>
