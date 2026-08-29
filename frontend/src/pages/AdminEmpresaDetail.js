@@ -721,7 +721,7 @@ export default function AdminEmpresaDetail() {
                                 </div>
                               </div>
                               <div className="flex items-center gap-1">
-                                <Button variant="outline" size="sm" className="gap-1 text-xs h-7" onClick={() => { setExpandedWorker(w.id === expandedWorker ? null : w.id); toggleWorker(w.id); navigate(`/admin/empresas/${companyId}`); }}>
+                                <Button variant="outline" size="sm" className="gap-1 text-xs h-7" onClick={() => { setActiveTab('general'); toggleWorker(w.id); }}>
                                   <Eye className="w-3 h-3" /> Ver
                                 </Button>
                                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDeleteWorker(w.id, w.name)}>

@@ -107,6 +107,18 @@ export default function DocumentFolders({ companyId, workerId = null }) {
     fetchDocs(null);
   };
 
+  const [draggingDoc, setDraggingDoc] = useState(null);
+  const [dragOverFolder, setDragOverFolder] = useState(null);
+
+  const handleMoveDocToFolder = async (docId, folderId) => {
+    try {
+      await api.put(`/companies/${companyId}/documents/${docId}/move`, { folder_id: folderId });
+      fetchDocs(currentFolder);
+      fetchFolders();
+      toast.success('Documento movido');
+    } catch { toast.error('Error moviendo'); }
+  };
+
   const handleUpload = async (files) => {
     if (!files?.length) return;
     setUploading(true);
@@ -188,8 +200,14 @@ export default function DocumentFolders({ companyId, workerId = null }) {
       {!currentFolder && folders.length > 0 && (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-5">
           {folders.map(f => (
-            <div key={f.id} className="group relative bg-white border border-slate-200 rounded-xl p-4 cursor-pointer hover:shadow-md hover:border-slate-300 transition-all"
-              onClick={() => openFolder(f)} data-testid={`folder-${f.id}`}>
+            <div key={f.id} className={`group relative bg-white border rounded-xl p-4 cursor-pointer hover:shadow-md transition-all ${
+              dragOverFolder === f.id ? 'border-sky-400 bg-sky-50 shadow-md ring-2 ring-sky-200' : 'border-slate-200 hover:border-slate-300'
+            }`}
+              onClick={() => openFolder(f)}
+              onDragOver={e => { e.preventDefault(); setDragOverFolder(f.id); }}
+              onDragLeave={() => setDragOverFolder(null)}
+              onDrop={e => { e.preventDefault(); setDragOverFolder(null); if (draggingDoc) { handleMoveDocToFolder(draggingDoc, f.id); setDraggingDoc(null); } }}
+              data-testid={`folder-${f.id}`}>
               {/* Color bar */}
               <div className="absolute top-0 left-0 right-0 h-1.5 rounded-t-xl" style={{ backgroundColor: f.color || '#64748b' }} />
 
@@ -256,7 +274,11 @@ export default function DocumentFolders({ companyId, workerId = null }) {
       ) : (
         <div className="space-y-2">
           {docs.map(doc => (
-            <div key={doc.id} className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition-shadow group" data-testid={`doc-${doc.id}`}>
+            <div key={doc.id} className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition-shadow group cursor-grab active:cursor-grabbing"
+              draggable
+              onDragStart={() => setDraggingDoc(doc.id)}
+              onDragEnd={() => { setDraggingDoc(null); setDragOverFolder(null); }}
+              data-testid={`doc-${doc.id}`}>
               <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${doc.content_type?.startsWith('image/') ? 'bg-sky-50' : 'bg-red-50'}`}>
                 {doc.content_type?.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-sky-500" /> : <FileText className="w-4 h-4 text-red-500" />}
               </div>
