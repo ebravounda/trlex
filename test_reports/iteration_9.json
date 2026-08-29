@@ -1,0 +1,52 @@
+{
+  "summary": "Regression test for 'Error cargando preview' bug fix on company documents. Backend (pytest 6/6 pass): admin upload -> list -> preview 200 (PDF, inline), download 200 (attachment), staff role preview 200 (403 regression fixed), unauth 401, bad id 404. Frontend (Playwright): admin login via 'Acceso Administrador' password form, navigated Empresas -> Empresa Test Demo, uploaded TEST_ui_preview.pdf via document-folders file input, clicked Eye (Ver) button - preview Dialog opened with PDF iframe, no 'Error cargando preview' toast appeared, Descargar button downloaded file, delete cleanup successful. Bug is fixed.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "DocumentFolders preview Dialog", "issues": ["Radix DialogContent warnings in console: missing DialogTitle and Description/aria-describedby - accessibility (screen readers). Consider adding VisuallyHidden DialogTitle."]}
+    ]
+  },
+  "passed_tests": [
+    "Backend: POST /api/companies/{id}/documents/upload -> 200 (admin)",
+    "Backend: GET /api/companies/{id}/documents lists uploaded doc",
+    "Backend: GET /api/company-documents/{id}/preview -> 200 with application/pdf and inline disposition (admin)",
+    "Backend: GET /api/company-documents/{id}/download -> 200 with attachment disposition (admin)",
+    "Backend: GET /api/company-documents/{id}/preview -> 200 for staff role (JWT minted, regression for 403 fix)",
+    "Backend: GET /api/company-documents/{id}/preview -> 401 without auth",
+    "Backend: GET /api/company-documents/deadbeef.../preview -> 404 for unknown id",
+    "Frontend: admin login (email+password) navigates to /admin/clients",
+    "Frontend: Empresas tab loads company list, Empresa Test Demo clickable",
+    "Frontend: company detail page shows DocumentFolders section, file upload input works",
+    "Frontend: after upload, doc row appears with Ver/Descargar/Eliminar buttons",
+    "Frontend: clicking Ver opens preview Dialog with iframe title='Preview PDF'; no 'Error cargando preview' toast",
+    "Frontend: clicking Descargar triggers file download with correct filename",
+    "Frontend: Eliminar removes doc row after confirm"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_company_doc_preview.py",
+    "/app/test_reports/pytest/iter9_company_preview.xml"
+  ],
+  "action_items": [
+    "(Optional) Add VisuallyHidden DialogTitle to preview Dialog in DocumentFolders.js to silence Radix a11y warnings",
+    "(Optional) /auth/login rejects role != admin; if staff are supposed to login via email+password (as noted in test_credentials.md 'Login with email/password via regular login form'), the current server code blocks them with 'Use PIN para acceder'. Confirm intended flow. Staff currently must use PIN flow to obtain a token."
+  ],
+  "critical_code_review_comments": [
+    "storage_key resolution `doc.get('storage_path') or doc.get('filename') or doc.get('storage_key')` is duplicated in both /download and /preview endpoints - extract helper _resolve_storage_key(doc) to DRY.",
+    "Preview and download endpoints return raw bytes into memory via FastAPIResponse; for large files use StreamingResponse to avoid memory pressure.",
+    "get_object() lets requests raise on non-2xx which surfaces as 500 to client - wrap in try/except and return 502/404 with a friendly message when storage returns 404.",
+    "server.py is 4738 lines - split into routers is overdue (mentioned in prior iteration).",
+    "Auth: /auth/login role check `if user.get('role') not in ('admin',)` means staff created via /api/staff cannot login via password form. Iteration 8 notes claim staff can login with email/password (first-login modal etc.) - there is a mismatch. Verify intended behavior."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_company_doc_preview.py (new)"
+  ],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% for tested flows"},
+  "test_credentials": {"admin": "malcafuz@tramilex.es / Admin123!"},
+  "seed_data_creation": "Ephemeral TEST_staff_{ts}@tramilex.es created and deleted by pytest fixture. TEST_ui_preview.pdf uploaded and deleted via UI test. No residual test data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Bug 'Error cargando preview' is fixed. Both fixes verified: (1) staff role now allowed on /api/company-documents/{id}/preview and /download (test_preview_staff_200 passes with minted JWT), (2) storage_key resolution falls back through storage_path->filename->storage_key and returns 404 when none is set. Frontend Dialog uses iframe for PDFs and img for images. To test staff, mint JWT directly with JWT_SECRET (from backend/.env) since /auth/login rejects non-admin roles.",
+  "rca of the issue": "Original bug: (1) /company-documents/{id}/preview and /download only allowed roles admin+company, so any staff user got 403 -> frontend shows 'Error cargando preview'. (2) Older documents in db.company_documents used 'storage_key' field instead of 'storage_path'; when only storage_path/filename were checked, empty string was passed to get_object -> upstream 404 -> exception -> 500. Fix (verified): permissions extended to include 'staff'; fallback chain added storage_key; explicit 404 when no key found. Regression tests in test_company_doc_preview.py cover both admin and staff flows and unauth/404 cases."
+}

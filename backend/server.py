@@ -2665,7 +2665,7 @@ async def list_worker_documents(company_id: str, worker_id: str, folder_id: str 
 
 @api_router.get("/company-documents/{doc_id}/download")
 async def download_company_document(doc_id: str, user=Depends(get_current_user)):
-    if user.get("role") not in ["admin", "company"]:
+    if user.get("role") not in ["admin", "staff", "company"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
     try:
         doc = await db.company_documents.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
@@ -2673,7 +2673,9 @@ async def download_company_document(doc_id: str, user=Depends(get_current_user))
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
-    storage_key = doc.get("storage_path") or doc.get("filename", "")
+    storage_key = doc.get("storage_path") or doc.get("filename") or doc.get("storage_key") or ""
+    if not storage_key:
+        raise HTTPException(status_code=404, detail="Archivo no disponible")
     data, ct = get_object(storage_key)
     return FastAPIResponse(content=data, media_type=ct, headers={
         "Content-Disposition": f'attachment; filename="{doc.get("original_filename", "document")}"'
@@ -2681,7 +2683,7 @@ async def download_company_document(doc_id: str, user=Depends(get_current_user))
 
 @api_router.get("/company-documents/{doc_id}/preview")
 async def preview_company_document(doc_id: str, user=Depends(get_current_user)):
-    if user.get("role") not in ["admin", "company"]:
+    if user.get("role") not in ["admin", "staff", "company"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
     try:
         doc = await db.company_documents.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
@@ -2689,7 +2691,9 @@ async def preview_company_document(doc_id: str, user=Depends(get_current_user)):
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
-    storage_key = doc.get("storage_path") or doc.get("filename", "")
+    storage_key = doc.get("storage_path") or doc.get("filename") or doc.get("storage_key") or ""
+    if not storage_key:
+        raise HTTPException(status_code=404, detail="Archivo no disponible")
     data, ct = get_object(storage_key)
     return FastAPIResponse(content=data, media_type=ct, headers={
         "Content-Disposition": f'inline; filename="{doc.get("original_filename", "document")}"'
