@@ -7,7 +7,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { toast } from 'sonner';
 import {
   FolderOpen, FolderPlus, Plus, Upload, Download, Trash2, ArrowLeft,
-  FileText, Image as ImageIcon, Pencil, Check, X, MoreHorizontal
+  FileText, Image as ImageIcon, Pencil, Check, X, Eye
 } from 'lucide-react';
 
 const FOLDER_COLORS = [
@@ -31,6 +31,8 @@ export default function DocumentFolders({ companyId, workerId = null }) {
   const [editName, setEditName] = useState('');
   const [uploading, setUploading] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
   const fileRef = useRef(null);
 
   const fetchFolders = async () => {
@@ -155,6 +157,28 @@ export default function DocumentFolders({ companyId, workerId = null }) {
       fetchDocs(currentFolder);
       toast.success('Eliminado');
     } catch { toast.error('Error'); }
+  };
+
+  const handlePreview = async (doc) => {
+    setPreviewDoc(doc);
+    try {
+      const res = await api.get(`/company-documents/${doc.id}/preview`, { responseType: 'blob' });
+      const url = URL.createObjectURL(res.data);
+      setPreviewUrl(url);
+    } catch {
+      toast.error('Error cargando preview');
+      setPreviewDoc(null);
+    }
+  };
+
+  const closePreview = () => {
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewDoc(null);
+    setPreviewUrl(null);
+  };
+
+  const isPreviewable = (ct) => {
+    return ct?.startsWith('image/') || ct === 'application/pdf';
   };
 
   const currentFolderData = folders.find(f => f.id === currentFolder);
@@ -283,10 +307,16 @@ export default function DocumentFolders({ companyId, workerId = null }) {
                 {doc.content_type?.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-sky-500" /> : <FileText className="w-4 h-4 text-red-500" />}
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-slate-800 truncate">{doc.display_name || doc.original_filename}</p>
+                <p className={`text-sm font-medium text-slate-800 truncate ${isPreviewable(doc.content_type) ? 'cursor-pointer hover:text-sky-600' : ''}`}
+                  onClick={() => isPreviewable(doc.content_type) && handlePreview(doc)}>
+                  {doc.display_name || doc.original_filename}
+                </p>
                 <span className="text-[11px] text-slate-400">{formatDate(doc.uploaded_at)}</span>
               </div>
               <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                {isPreviewable(doc.content_type) && (
+                  <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handlePreview(doc)} title="Previsualizar"><Eye className="w-3.5 h-3.5 text-sky-500" /></Button>
+                )}
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDownload(doc)}><Download className="w-3.5 h-3.5 text-slate-500" /></Button>
                 <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDeleteDoc(doc.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
               </div>
@@ -294,6 +324,36 @@ export default function DocumentFolders({ companyId, workerId = null }) {
           ))}
         </div>
       )}
+
+      {/* Preview Dialog */}
+      <Dialog open={!!previewDoc} onOpenChange={closePreview}>
+        <DialogContent className="max-w-4xl h-[85vh] p-0 rounded-2xl overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-slate-200 bg-slate-50">
+            <div className="flex items-center gap-3 min-w-0">
+              {previewDoc?.content_type?.startsWith('image/') 
+                ? <ImageIcon className="w-4 h-4 text-sky-500 shrink-0" />
+                : <FileText className="w-4 h-4 text-red-500 shrink-0" />}
+              <p className="text-sm font-medium text-slate-900 truncate">{previewDoc?.display_name || previewDoc?.original_filename}</p>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <Button variant="outline" size="sm" className="gap-1 text-xs h-8" onClick={() => { if (previewDoc) handleDownload(previewDoc); }}>
+                <Download className="w-3 h-3" /> Descargar
+              </Button>
+            </div>
+          </div>
+          <div className="flex-1 overflow-auto bg-slate-100 flex items-center justify-center" style={{ height: 'calc(85vh - 56px)' }}>
+            {!previewUrl ? (
+              <div className="animate-spin rounded-full h-8 w-8 border-2 border-slate-900 border-t-transparent" />
+            ) : previewDoc?.content_type?.startsWith('image/') ? (
+              <img src={previewUrl} alt={previewDoc?.original_filename} className="max-w-full max-h-full object-contain" />
+            ) : previewDoc?.content_type === 'application/pdf' ? (
+              <iframe src={previewUrl} className="w-full h-full" title="Preview PDF" />
+            ) : (
+              <p className="text-sm text-slate-500">Preview no disponible</p>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Create Folder Dialog */}
       <Dialog open={showCreateFolder} onOpenChange={setShowCreateFolder}>

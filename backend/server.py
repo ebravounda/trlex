@@ -2667,17 +2667,32 @@ async def list_worker_documents(company_id: str, worker_id: str, folder_id: str 
 async def download_company_document(doc_id: str, user=Depends(get_current_user)):
     if user.get("role") not in ["admin", "company"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
-
     try:
         doc = await db.company_documents.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
     except Exception:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
-
-    data, ct = get_object(doc["filename"])
+    storage_key = doc.get("storage_path") or doc.get("filename", "")
+    data, ct = get_object(storage_key)
     return FastAPIResponse(content=data, media_type=ct, headers={
         "Content-Disposition": f'attachment; filename="{doc.get("original_filename", "document")}"'
+    })
+
+@api_router.get("/company-documents/{doc_id}/preview")
+async def preview_company_document(doc_id: str, user=Depends(get_current_user)):
+    if user.get("role") not in ["admin", "company"]:
+        raise HTTPException(status_code=403, detail="Acceso denegado")
+    try:
+        doc = await db.company_documents.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    storage_key = doc.get("storage_path") or doc.get("filename", "")
+    data, ct = get_object(storage_key)
+    return FastAPIResponse(content=data, media_type=ct, headers={
+        "Content-Disposition": f'inline; filename="{doc.get("original_filename", "document")}"'
     })
 
 
