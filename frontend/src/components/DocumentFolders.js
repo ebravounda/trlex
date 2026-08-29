@@ -1,0 +1,302 @@
+import { useState, useRef } from 'react';
+import api from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { toast } from 'sonner';
+import {
+  FolderOpen, FolderPlus, Plus, Upload, Download, Trash2, ArrowLeft,
+  FileText, Image as ImageIcon, Pencil, Check, X, MoreHorizontal
+} from 'lucide-react';
+
+const FOLDER_COLORS = [
+  '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981',
+  '#ef4444', '#06b6d4', '#f97316', '#6366f1', '#64748b'
+];
+
+function formatDate(iso) {
+  if (!iso) return '-';
+  try { return new Date(iso).toLocaleDateString('es-ES', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }); } catch { return '-'; }
+}
+
+export default function DocumentFolders({ companyId, workerId = null }) {
+  const [folders, setFolders] = useState([]);
+  const [docs, setDocs] = useState([]);
+  const [currentFolder, setCurrentFolder] = useState(null);
+  const [showCreateFolder, setShowCreateFolder] = useState(false);
+  const [folderName, setFolderName] = useState('Nueva carpeta');
+  const [folderColor, setFolderColor] = useState('#3b82f6');
+  const [editingFolder, setEditingFolder] = useState(null);
+  const [editName, setEditName] = useState('');
+  const [uploading, setUploading] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const fileRef = useRef(null);
+
+  const fetchFolders = async () => {
+    try {
+      const params = workerId ? `?worker_id=${workerId}` : '';
+      const res = await api.get(`/companies/${companyId}/folders${params}`);
+      setFolders(res.data);
+    } catch {}
+  };
+
+  const fetchDocs = async (folderId = null) => {
+    try {
+      const params = folderId ? `?folder_id=${folderId}` : '';
+      const res = await api.get(`/companies/${companyId}/documents${params}`);
+      setDocs(res.data);
+    } catch {}
+  };
+
+  useState(() => {
+    fetchFolders();
+    fetchDocs();
+    setLoaded(true);
+  }, [companyId, workerId]);
+
+  const handleCreateFolder = async () => {
+    if (!folderName.trim()) return;
+    try {
+      await api.post(`/companies/${companyId}/folders`, { name: folderName, color: folderColor, worker_id: workerId });
+      setShowCreateFolder(false);
+      setFolderName('Nueva carpeta');
+      fetchFolders();
+      toast.success('Carpeta creada');
+    } catch { toast.error('Error'); }
+  };
+
+  const handleRenameFolder = async (folderId) => {
+    if (!editName.trim()) return;
+    try {
+      await api.put(`/companies/${companyId}/folders/${folderId}`, { name: editName });
+      setEditingFolder(null);
+      fetchFolders();
+    } catch { toast.error('Error'); }
+  };
+
+  const handleColorChange = async (folderId, color) => {
+    try {
+      await api.put(`/companies/${companyId}/folders/${folderId}`, { color });
+      fetchFolders();
+    } catch {}
+  };
+
+  const handleDeleteFolder = async (folderId) => {
+    if (!window.confirm('Eliminar carpeta? Los documentos se moveran a la raiz.')) return;
+    try {
+      await api.delete(`/companies/${companyId}/folders/${folderId}`);
+      fetchFolders();
+      fetchDocs(currentFolder);
+      toast.success('Carpeta eliminada');
+    } catch { toast.error('Error'); }
+  };
+
+  const openFolder = (folder) => {
+    setCurrentFolder(folder.id);
+    fetchDocs(folder.id);
+  };
+
+  const goBack = () => {
+    setCurrentFolder(null);
+    fetchDocs(null);
+  };
+
+  const handleUpload = async (files) => {
+    if (!files?.length) return;
+    setUploading(true);
+    let count = 0;
+    for (const file of files) {
+      if (file.size > 10 * 1024 * 1024) { toast.error(`${file.name} supera 10MB`); continue; }
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('category', 'otros');
+      if (currentFolder) fd.append('folder_id', currentFolder);
+      try { await api.post(`/companies/${companyId}/documents/upload`, fd); count++; } catch { toast.error(`Error: ${file.name}`); }
+    }
+    if (count > 0) { toast.success(`${count} doc(s) subido(s)`); fetchDocs(currentFolder); }
+    setUploading(false);
+  };
+
+  const handleDownload = async (doc) => {
+    try {
+      const res = await api.get(`/company-documents/${doc.id}/download`, { responseType: 'blob' });
+      const url = window.URL.createObjectURL(res.data);
+      const a = document.createElement('a');
+      a.href = url; a.download = doc.original_filename; a.click();
+      window.URL.revokeObjectURL(url);
+    } catch { toast.error('Error'); }
+  };
+
+  const handleDeleteDoc = async (docId) => {
+    if (!window.confirm('Eliminar documento?')) return;
+    try {
+      await api.delete(`/companies/${companyId}/documents/${docId}`);
+      fetchDocs(currentFolder);
+      toast.success('Eliminado');
+    } catch { toast.error('Error'); }
+  };
+
+  const currentFolderData = folders.find(f => f.id === currentFolder);
+
+  return (
+    <div data-testid="document-folders">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          {currentFolder ? (
+            <>
+              <button onClick={goBack} className="flex items-center gap-1 text-sm text-slate-500 hover:text-slate-700" data-testid="folder-back-btn">
+                <ArrowLeft className="w-4 h-4" /> Carpetas
+              </button>
+              <span className="text-slate-300">/</span>
+              <div className="flex items-center gap-2">
+                <div className="w-5 h-5 rounded" style={{ backgroundColor: currentFolderData?.color || '#64748b' }} />
+                <span className="text-sm font-semibold text-slate-900">{currentFolderData?.name || 'Carpeta'}</span>
+              </div>
+            </>
+          ) : (
+            <div className="flex items-center gap-2">
+              <FolderOpen className="w-5 h-5 text-slate-400" />
+              <span className="text-sm font-semibold text-slate-700">Carpetas y documentos</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {!currentFolder && (
+            <Button variant="outline" size="sm" className="gap-1.5 h-8 text-xs" onClick={() => setShowCreateFolder(true)} data-testid="create-folder-btn">
+              <FolderPlus className="w-3.5 h-3.5" /> Carpeta
+            </Button>
+          )}
+          <input ref={fileRef} type="file" multiple accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx,application/pdf,image/*" className="hidden"
+            onChange={e => { handleUpload(Array.from(e.target.files)); e.target.value = ''; }} />
+          <Button size="sm" className="gap-1.5 h-8 text-xs bg-slate-900 hover:bg-slate-800" onClick={() => fileRef.current?.click()} disabled={uploading}>
+            <Upload className="w-3.5 h-3.5" /> {uploading ? 'Subiendo...' : 'Subir'}
+          </Button>
+        </div>
+      </div>
+
+      {/* Folders Grid */}
+      {!currentFolder && folders.length > 0 && (
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 mb-5">
+          {folders.map(f => (
+            <div key={f.id} className="group relative bg-white border border-slate-200 rounded-xl p-4 cursor-pointer hover:shadow-md hover:border-slate-300 transition-all"
+              onClick={() => openFolder(f)} data-testid={`folder-${f.id}`}>
+              {/* Color bar */}
+              <div className="absolute top-0 left-0 right-0 h-1.5 rounded-t-xl" style={{ backgroundColor: f.color || '#64748b' }} />
+
+              {/* Edit/Delete buttons */}
+              <div className="absolute top-3 right-2 flex gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                <button onClick={() => { setEditingFolder(f.id); setEditName(f.name); }} className="p-1 rounded hover:bg-slate-100">
+                  <Pencil className="w-3 h-3 text-slate-400" />
+                </button>
+                <button onClick={() => handleDeleteFolder(f.id)} className="p-1 rounded hover:bg-red-50">
+                  <Trash2 className="w-3 h-3 text-red-400" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-3 mt-1">
+                <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: (f.color || '#64748b') + '20' }}>
+                  <FolderOpen className="w-5 h-5" style={{ color: f.color || '#64748b' }} />
+                </div>
+                <div className="min-w-0 flex-1">
+                  {editingFolder === f.id ? (
+                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                      <Input value={editName} onChange={e => setEditName(e.target.value)} className="h-7 text-xs" autoFocus
+                        onKeyDown={e => { if (e.key === 'Enter') handleRenameFolder(f.id); if (e.key === 'Escape') setEditingFolder(null); }} />
+                      <button onClick={() => handleRenameFolder(f.id)} className="p-1"><Check className="w-3.5 h-3.5 text-emerald-600" /></button>
+                      <button onClick={() => setEditingFolder(null)} className="p-1"><X className="w-3.5 h-3.5 text-slate-400" /></button>
+                    </div>
+                  ) : (
+                    <>
+                      <p className="text-sm font-medium text-slate-900 truncate">{f.name}</p>
+                      <p className="text-[11px] text-slate-400">{f.doc_count || 0} archivo(s)</p>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Color picker on hover */}
+              {editingFolder === f.id && (
+                <div className="flex gap-1 mt-2 flex-wrap" onClick={e => e.stopPropagation()}>
+                  {FOLDER_COLORS.map(c => (
+                    <button key={c} onClick={() => handleColorChange(f.id, c)}
+                      className={`w-5 h-5 rounded-full border-2 transition-all ${f.color === c ? 'border-slate-900 scale-110' : 'border-transparent hover:scale-110'}`}
+                      style={{ backgroundColor: c }} />
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Documents */}
+      {docs.length === 0 && folders.length === 0 ? (
+        <div className="border-2 border-dashed border-slate-200 rounded-xl p-10 text-center cursor-pointer hover:border-slate-300 transition-colors"
+          onClick={() => fileRef.current?.click()}>
+          <Upload className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <p className="text-sm font-medium text-slate-600">Sube documentos o crea carpetas</p>
+          <p className="text-xs text-slate-400 mt-1">PDF, imagenes, Word, Excel — max 10MB</p>
+        </div>
+      ) : docs.length === 0 && currentFolder ? (
+        <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-slate-300 transition-colors"
+          onClick={() => fileRef.current?.click()}>
+          <Upload className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+          <p className="text-sm text-slate-500">Carpeta vacia — sube archivos aqui</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {docs.map(doc => (
+            <div key={doc.id} className="flex items-center gap-3 bg-white border border-slate-200 rounded-lg p-3 hover:shadow-sm transition-shadow group" data-testid={`doc-${doc.id}`}>
+              <div className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${doc.content_type?.startsWith('image/') ? 'bg-sky-50' : 'bg-red-50'}`}>
+                {doc.content_type?.startsWith('image/') ? <ImageIcon className="w-4 h-4 text-sky-500" /> : <FileText className="w-4 h-4 text-red-500" />}
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium text-slate-800 truncate">{doc.display_name || doc.original_filename}</p>
+                <span className="text-[11px] text-slate-400">{formatDate(doc.uploaded_at)}</span>
+              </div>
+              <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDownload(doc)}><Download className="w-3.5 h-3.5 text-slate-500" /></Button>
+                <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={() => handleDeleteDoc(doc.id)}><Trash2 className="w-3.5 h-3.5 text-red-500" /></Button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Create Folder Dialog */}
+      <Dialog open={showCreateFolder} onOpenChange={setShowCreateFolder}>
+        <DialogContent className="max-w-sm rounded-xl">
+          <DialogHeader><DialogTitle className="text-lg">Nueva carpeta</DialogTitle></DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1.5 block">Nombre</label>
+              <Input value={folderName} onChange={e => setFolderName(e.target.value)} className="h-10" autoFocus data-testid="folder-name-input"
+                onKeyDown={e => { if (e.key === 'Enter') handleCreateFolder(); }} />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-2 block">Color</label>
+              <div className="flex gap-2 flex-wrap">
+                {FOLDER_COLORS.map(c => (
+                  <button key={c} onClick={() => setFolderColor(c)}
+                    className={`w-8 h-8 rounded-lg border-2 transition-all ${folderColor === c ? 'border-slate-900 scale-110 shadow-sm' : 'border-transparent hover:scale-105'}`}
+                    style={{ backgroundColor: c }} />
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ backgroundColor: folderColor + '20' }}>
+                <FolderOpen className="w-5 h-5" style={{ color: folderColor }} />
+              </div>
+              <p className="text-sm font-medium text-slate-900">{folderName || 'Nueva carpeta'}</p>
+            </div>
+            <Button onClick={handleCreateFolder} className="w-full h-10 bg-slate-900 hover:bg-slate-800 rounded-lg" data-testid="submit-folder-btn">
+              Crear carpeta
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

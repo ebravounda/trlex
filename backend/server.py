@@ -1602,9 +1602,61 @@ async def compress_pdf(
 
 
 
+# --- Company Folders ---
+@api_router.get("/companies/{company_id}/folders")
+async def get_company_folders(company_id: str, worker_id: str = None, user=Depends(get_current_user)):
+    query = {"company_id": company_id, "is_deleted": {"$ne": True}}
+    if worker_id:
+        query["worker_id"] = worker_id
+    else:
+        query["worker_id"] = None
+    folders = []
+    async for f in db.company_folders.find(query).sort("created_at", 1):
+        doc_count = await db.company_documents.count_documents({"folder_id": str(f["_id"]), "is_deleted": False})
+        f["id"] = str(f["_id"])
+        del f["_id"]
+        f["doc_count"] = doc_count
+        folders.append(f)
+    return folders
+
+@api_router.post("/companies/{company_id}/folders")
+async def create_company_folder(company_id: str, body: dict = Body(...), user=Depends(require_staff_or_admin)):
+    name = body.get("name", "Nueva carpeta").strip()
+    color = body.get("color", "#64748b")
+    worker_id = body.get("worker_id", None)
+    folder = {
+        "company_id": company_id,
+        "worker_id": worker_id,
+        "name": name,
+        "color": color,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "is_deleted": False,
+    }
+    result = await db.company_folders.insert_one(folder)
+    return {"id": str(result.inserted_id), "message": "Carpeta creada"}
+
+@api_router.put("/companies/{company_id}/folders/{folder_id}")
+async def update_company_folder(company_id: str, folder_id: str, body: dict = Body(...), user=Depends(require_staff_or_admin)):
+    update = {}
+    if "name" in body:
+        update["name"] = body["name"].strip()
+    if "color" in body:
+        update["color"] = body["color"]
+    if not update:
+        return {"message": "Sin cambios"}
+    await db.company_folders.update_one({"_id": ObjectId(folder_id), "company_id": company_id}, {"$set": update})
+    return {"message": "Carpeta actualizada"}
+
+@api_router.delete("/companies/{company_id}/folders/{folder_id}")
+async def delete_company_folder(company_id: str, folder_id: str, user=Depends(require_staff_or_admin)):
+    await db.company_folders.update_one({"_id": ObjectId(folder_id)}, {"$set": {"is_deleted": True}})
+    await db.company_documents.update_many({"folder_id": folder_id}, {"$set": {"folder_id": None}})
+    return {"message": "Carpeta eliminada"}
+
+
 # --- Company-level Documents ---
 @api_router.post("/companies/{company_id}/documents/upload")
-async def upload_company_doc(company_id: str, file: UploadFile = File(...), category: str = Form("otros"), user=Depends(require_staff_or_admin)):
+async def upload_company_doc(company_id: str, file: UploadFile = File(...), category: str = Form("otros"), folder_id: str = Form(None), user=Depends(require_staff_or_admin)):
     company = await db.companies.find_one({"_id": ObjectId(company_id)})
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
@@ -1617,6 +1669,7 @@ async def upload_company_doc(company_id: str, file: UploadFile = File(...), cate
     doc = {
         "company_id": company_id,
         "worker_id": None,
+        "folder_id": folder_id,
         "original_filename": file.filename,
         "display_name": file.filename,
         "content_type": file.content_type or "application/octet-stream",
@@ -1631,15 +1684,24 @@ async def upload_company_doc(company_id: str, file: UploadFile = File(...), cate
     return {"id": str(result.inserted_id), "filename": file.filename}
 
 @api_router.get("/companies/{company_id}/documents")
-async def get_company_docs(company_id: str, user=Depends(require_staff_or_admin)):
+async def get_company_docs(company_id: str, folder_id: str = None, user=Depends(require_staff_or_admin)):
+    query = {"company_id": company_id, "worker_id": None, "is_deleted": False}
+    if folder_id:
+        query["folder_id"] = folder_id
+    else:
+        query["folder_id"] = None
     docs = []
-    async for d in db.company_documents.find(
-        {"company_id": company_id, "worker_id": None, "is_deleted": False}
-    ).sort("uploaded_at", -1):
+    async for d in db.company_documents.find(query).sort("uploaded_at", -1):
         d["id"] = str(d["_id"])
         del d["_id"]
         docs.append(d)
     return docs
+
+@api_router.put("/companies/{company_id}/documents/{doc_id}/move")
+async def move_company_doc(company_id: str, doc_id: str, body: dict = Body(...), user=Depends(require_staff_or_admin)):
+    folder_id = body.get("folder_id", None)
+    await db.company_documents.update_one({"_id": ObjectId(doc_id), "company_id": company_id}, {"$set": {"folder_id": folder_id}})
+    return {"message": "Documento movido"}
 
 @api_router.delete("/companies/{company_id}/documents/{doc_id}")
 async def delete_company_doc(company_id: str, doc_id: str, user=Depends(require_staff_or_admin)):
