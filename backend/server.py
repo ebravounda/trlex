@@ -2507,8 +2507,6 @@ async def update_worker(company_id: str, worker_id: str, body: CompanyWorkerInpu
 
 
 
-# --- Company profession categories ---
-@api_router.get("/companies/{company_id}/professions")
 
 # --- Global Personal (all workers all companies) ---
 @api_router.get("/personal/all")
