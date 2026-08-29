@@ -28,7 +28,8 @@ const STEPS_WINDOWS = [
   },
   {
     title: "Ingresa el PIN de acceso",
-    desc: "Escribe el PIN de 6 digitos que te proporciono el administrador y haz clic en 'Conectar'."
+    desc: "Te pedira un PIN de 6 digitos. Escribelo y haz clic en 'Conectar':",
+    pin: "258000"
   },
   {
     title: "Listo!",
@@ -61,7 +62,8 @@ const STEPS_MAC = [
   },
   {
     title: "Ingresa el PIN de acceso",
-    desc: "Escribe el PIN de 6 digitos que te proporciono el administrador y haz clic en 'Conectar'."
+    desc: "Te pedira un PIN de 6 digitos. Escribelo y haz clic en 'Conectar':",
+    pin: "258000"
   },
   {
     title: "Listo!",
@@ -117,6 +119,20 @@ function StepCard({ step, number }) {
             data-testid="remote-desktop-link">
             <ExternalLink className="w-3.5 h-3.5" /> {step.link}
           </a>
+        )}
+
+        {step.pin && (
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 mt-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-xs text-slate-500">PIN de acceso</p>
+                <p className="text-2xl font-mono font-bold text-slate-900 tracking-widest">{step.pin}</p>
+              </div>
+              <button onClick={() => handleCopy(step.pin)} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-md hover:bg-slate-100">
+                {copied ? <CheckCircle2 className="w-4 h-4 text-emerald-500" /> : <Copy className="w-4 h-4" />}
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

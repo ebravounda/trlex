@@ -88,12 +88,13 @@ export default function AuthPage() {
     setLoading(true);
     try {
       const res = await api.post('/auth/request-pin', { email: loginEmail });
-      toast.success(res.data.message);
+      toast.success(res.data.message || 'Codigo enviado');
       setView('pin-code');
       setPinCode(['', '', '', '', '', '']);
-      setTimeout(() => pinRefs[0].current?.focus(), 100);
+      setTimeout(() => { try { pinRefs[0].current?.focus(); } catch(e) {} }, 200);
     } catch (err) {
-      toast.error(formatApiError(err.response?.data?.detail));
+      const msg = err.response?.data?.detail;
+      toast.error(formatApiError(msg));
     }
     setLoading(false);
   };
