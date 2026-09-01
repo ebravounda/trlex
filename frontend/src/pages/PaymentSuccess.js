@@ -4,7 +4,7 @@ import api from '@/lib/api';
 import { CheckCircle2, Loader2, Calendar, Clock, MapPin } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const LOGO_URL = "https://tramilex.es/logo.png";
+const LOGO_URL = "/logo.png";
 
 export default function PaymentSuccess() {
   const [searchParams] = useSearchParams();

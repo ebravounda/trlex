@@ -3,7 +3,7 @@ import { useAuth } from '@/context/AuthContext';
 import { ArrowRight, Shield, FileText, Globe } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
-const LOGO_URL = "https://tramilex.es/logo.png";
+const LOGO_URL = "/logo.png";
 
 export default function LandingPage() {
   const navigate = useNavigate();

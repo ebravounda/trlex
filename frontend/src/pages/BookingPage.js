@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { toast } from 'sonner';
 import { Calendar, Clock, MapPin, ArrowLeft, ArrowRight, CreditCard, CheckCircle2, Loader2, Shield } from 'lucide-react';
 
-const LOGO_URL = "https://tramilex.es/logo.png";
+const LOGO_URL = "/logo.png";
 
 const STEPS = ['location', 'datetime', 'details', 'payment'];
 

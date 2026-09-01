@@ -2,7 +2,7 @@ import { useNavigate } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { XCircle } from 'lucide-react';
 
-const LOGO_URL = "https://tramilex.es/logo.png";
+const LOGO_URL = "/logo.png";
 
 export default function PaymentCancel() {
   const navigate = useNavigate();

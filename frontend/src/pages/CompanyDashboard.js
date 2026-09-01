@@ -25,7 +25,7 @@ function getGreeting() {
   return 'Buenas noches';
 }
 
-const LOGO_URL = "https://tramilex.es/logo.png";
+const LOGO_URL = "/logo.png";
 
 const CATEGORIES = [
   { value: "identificacion", label: "Identificacion" },

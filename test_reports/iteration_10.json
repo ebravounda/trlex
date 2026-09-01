@@ -1,0 +1,54 @@
+{
+  "summary": "Regression test for iter10 fixes: (1) staff role now allowed on company & worker document endpoints, (2) logo switched from https://tramilex.es/logo.png (Cloudflare 403) to local /logo.png. Backend pytest 9/9 pass (admin login, logo asset 200 image, staff list/upload/preview/download company docs, staff list/upload worker docs, staff blocked on /settings/smtp 403). Frontend Playwright: login page auth-logo renders (2167x726), admin sidebar admin-logo renders (2167x726), Empresas -> Empresa Test Demo detail loads, file upload succeeds, preview Dialog opens with PDF iframe, no error toasts. All fixes verified working.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Preview Dialog", "issues": ["Radix DialogContent missing DialogTitle (a11y console warning) - carried from iter9, non-blocking"]}
+    ]
+  },
+  "passed_tests": [
+    "GET /logo.png -> 200 image (local asset serves)",
+    "POST /api/auth/login admin -> 200",
+    "GET /api/companies/{id}/documents staff -> 200",
+    "GET /api/companies/{id}/folders staff -> 200",
+    "POST /api/companies/{id}/documents/upload staff -> 200",
+    "GET /api/company-documents/{id}/preview staff -> 200 (application/pdf)",
+    "GET /api/company-documents/{id}/download staff -> 200 (attachment)",
+    "GET /api/companies/{id}/workers/{wid}/documents staff -> 200",
+    "POST /api/companies/{id}/workers/{wid}/documents/upload staff -> 200",
+    "POST /api/companies/{id}/documents/upload admin -> 200 + preview 200",
+    "GET /api/settings/smtp staff -> 403 (settings still admin-only, correct)",
+    "Frontend: login page auth-logo image renders (naturalWidth=2167)",
+    "Frontend: admin sidebar admin-logo image renders (naturalWidth=2167)",
+    "Frontend: admin login (email+password) -> /admin/clients",
+    "Frontend: Empresas -> Empresa Test Demo detail page loads",
+    "Frontend: file upload input works, doc row appears",
+    "Frontend: preview modal (Dialog) opens with iframe, no 'Error cargando preview' toast"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_staff_permissions_iter10.py",
+    "/app/test_reports/pytest/iter10_staff.xml"
+  ],
+  "action_items": [
+    "(Optional / not part of this bug) /api/auth/login still rejects role != admin (server.py:505). Staff users cannot login via password form even though test_credentials.md and iteration 8 imply they should. Currently staff must obtain a token via PIN flow. If staff are supposed to login with email+password, remove/broaden the check at line 505 to include 'staff'.",
+    "(Optional) Add VisuallyHidden DialogTitle to preview Dialog (DocumentFolders.js) to silence Radix a11y warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 4738+ lines - split into routers.",
+    "Duplicated permission checks `if user.get('role') not in ['admin','staff','company']: raise 403` appear ~10 times. Extract into a `require_admin_staff_or_company` dependency (similar to existing require_staff_or_admin) to DRY.",
+    "_send_pin_email() still uses external logo URL https://tramilex.es/logo.png (line 578) - if Cloudflare blocks it in emails too, PIN emails will show broken logo. Consider embedding logo as CID attachment or hosting via /logo.png on public URL.",
+    "preview/download for /company-documents load full file into memory - use StreamingResponse for large files."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_staff_permissions_iter10.py (new)"
+  ],
+  "success_rate": {"backend": "100% (9/9)", "frontend": "100% for tested flows"},
+  "test_credentials": {"admin": "malcafuz@tramilex.es / Admin123!"},
+  "seed_data_creation": "Ephemeral staff user TEST_staff_iter10_{ts}@tramilex.es created directly in db.users (login endpoint rejects staff), JWT minted via JWT_SECRET, deleted in fixture teardown. TEST_iter10_admin.pdf / TEST_iter10_staff.pdf / TEST_iter10_worker.pdf uploaded and cleaned up. UI test uploaded TEST_iter10_ui.pdf (cleanup attempted via delete button).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Both iter10 fixes verified: (1) All company/worker document endpoints accept staff role (regression test in test_staff_permissions_iter10.py). (2) Logo now served from local /logo.png (public/ folder, 1.1MB) - reachable through preview URL and renders on both login (auth-logo) and admin sidebar (admin-logo). Note: /api/auth/login still hard-restricts to admin role only (line 505 of server.py) - flagged as optional action item since it's outside this bug's scope but conflicts with test_credentials.md that lists a staff account with password. To create staff tokens for testing, insert into db.users with role='staff' and mint JWT with backend/.env JWT_SECRET.",
+  "rca of the issue": "Bug 1 (staff 403): Multiple endpoints checked `role in ['admin','company']` only; fix expanded to include 'staff'. All ~10 occurrences updated. Verified. Bug 2 (logo 403): tramilex.es/logo.png blocked by Cloudflare returning 403; fix switched frontend LOGO_URL constants (AuthPage.js, AdminLayout.js) to relative /logo.png served by frontend from public/. Verified via curl (200 image) and naturalWidth>0 in browser."
+}

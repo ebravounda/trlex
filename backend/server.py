@@ -575,7 +575,7 @@ def _send_pin_email(to_email, name, pin):
     subject = f"Tu codigo de acceso Tramilex: {pin}"
     html_body = f"""
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
-        <img src="https://tramilex.es/logo.png" alt="Tramilex" style="height: 50px; margin-bottom: 20px;" />
+        <img src="https://tramilex.goroky.es/logo.png" alt="Tramilex" style="height: 50px; margin-bottom: 20px;" />
         <h2 style="color: #0f172a; margin-bottom: 8px;">Tu codigo de acceso</h2>
         <p>Hola <strong>{name}</strong>,</p>
         <p>Tu codigo de acceso para ingresar a Tramilex es:</p>
@@ -3051,7 +3051,7 @@ async def upload_sign_request(
 async def list_sign_requests(company_id: str, user=Depends(get_current_user)):
     if user.get("role") == "company" and user["_id"] != company_id:
         raise HTTPException(status_code=403, detail="Acceso denegado")
-    if user.get("role") not in ["admin", "company"]:
+    if user.get("role") not in ["admin", "staff", "company"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
     docs = []
@@ -3072,7 +3072,7 @@ async def list_sign_requests(company_id: str, user=Depends(get_current_user)):
 
 @api_router.get("/sign-requests/{doc_id}/download")
 async def download_sign_request(doc_id: str, user=Depends(get_current_user)):
-    if user.get("role") not in ["admin", "company"]:
+    if user.get("role") not in ["admin", "staff", "company"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
     doc = await db.sign_requests.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
@@ -3087,7 +3087,7 @@ async def download_sign_request(doc_id: str, user=Depends(get_current_user)):
 
 @api_router.get("/sign-requests/{doc_id}/download-signed")
 async def download_signed_version(doc_id: str, user=Depends(get_current_user)):
-    if user.get("role") not in ["admin", "company"]:
+    if user.get("role") not in ["admin", "staff", "company"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
     doc = await db.sign_requests.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
@@ -3106,7 +3106,7 @@ async def upload_signed_document(
     file: UploadFile = File(...),
     user=Depends(get_current_user)
 ):
-    if user.get("role") not in ["admin", "company"]:
+    if user.get("role") not in ["admin", "staff", "company"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
     doc = await db.sign_requests.find_one({"_id": ObjectId(doc_id), "is_deleted": False})
