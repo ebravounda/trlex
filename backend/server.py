@@ -817,7 +817,7 @@ async def download_document(doc_id: str, request: Request):
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
-    if user.get("role") != "admin" and doc["user_id"] != user["_id"]:
+    if user.get("role") not in ["admin", "staff"] and doc["user_id"] != user["_id"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
     data, content_type = get_object(doc["storage_path"])
@@ -844,7 +844,7 @@ async def preview_document(doc_id: str, request: Request):
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
 
-    if user.get("role") != "admin" and doc["user_id"] != user["_id"]:
+    if user.get("role") not in ["admin", "staff"] and doc["user_id"] != user["_id"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
     data, content_type = get_object(doc["storage_path"])
@@ -2440,7 +2440,7 @@ async def add_worker(company_id: str, body: CompanyWorkerInput, user=Depends(get
     if user.get("role") == "company":
         if user["_id"] != company_id:
             raise HTTPException(status_code=403, detail="Acceso denegado")
-    elif user.get("role") != "admin":
+    elif user.get("role") not in ["admin", "staff"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
     company = await db.companies.find_one({"_id": ObjectId(company_id)})
@@ -2477,7 +2477,7 @@ async def update_worker(company_id: str, worker_id: str, body: CompanyWorkerInpu
     if user.get("role") == "company":
         if user["_id"] != company_id:
             raise HTTPException(status_code=403, detail="Acceso denegado")
-    elif user.get("role") != "admin":
+    elif user.get("role") not in ["admin", "staff"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
 
     update_fields = {
@@ -2571,7 +2571,7 @@ async def delete_worker_endpoint(company_id: str, worker_id: str, user=Depends(g
     if user.get("role") == "company":
         if user["_id"] != company_id:
             raise HTTPException(status_code=403, detail="Acceso denegado")
-    elif user.get("role") != "admin":
+    elif user.get("role") not in ["admin", "staff"]:
         raise HTTPException(status_code=403, detail="Acceso denegado")
     try:
         result = await db.company_workers.delete_one({"_id": ObjectId(worker_id), "company_id": company_id})
