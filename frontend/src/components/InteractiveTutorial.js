@@ -25,7 +25,7 @@ const ADMIN_STEPS = [
 const CLIENT_STEPS = [
   { icon: Sparkles, title: 'Bienvenido a Tramilex!', desc: 'Tu plataforma para gestionar tus documentos de inmigracion de forma segura y eficiente.', color: 'from-slate-900 to-slate-700' },
   { icon: ClipboardList, title: 'Requisitos del tramite', desc: 'En tu panel podras ver todos los documentos que necesitas para tu tramite. En movil, pulsa "Requisitos" para desplegarlos.', color: 'from-blue-600 to-blue-800' },
-  { icon: Upload, title: 'Subir documentos', desc: 'Selecciona la categoria (Identificacion, Residencia, Trabajo, etc.) y arrastra o haz clic para subir archivos. Maximo 5MB por archivo.', color: 'from-emerald-600 to-emerald-800' },
+  { icon: Upload, title: 'Subir documentos', desc: 'Selecciona la categoria (Identificacion, Residencia, Trabajo, etc.) y arrastra o haz clic para subir archivos. Maximo 50MB por archivo.', color: 'from-emerald-600 to-emerald-800' },
   { icon: FileText, title: 'Estado de documentos', desc: 'Revisa el estado de tus documentos: "Pendiente de revision" o "Revisado". Tambien puedes descargarlos en cualquier momento.', color: 'from-amber-600 to-amber-800' },
   { icon: CheckCircle2, title: 'Todo listo!', desc: 'Ya sabes como funciona tu panel. Si tienes dudas, usa el chat de asistencia en la esquina inferior derecha.', color: 'from-emerald-600 to-emerald-700' },
 ];

@@ -149,7 +149,7 @@ export default function AdminEmpresaDetail() {
     setUploadingCompanyDoc(true);
     let count = 0;
     for (const file of files) {
-      if (file.size > 10 * 1024 * 1024) { toast.error(`${file.name} supera 10MB`); continue; }
+      if (file.size > 50 * 1024 * 1024) { toast.error(`${file.name} supera 50MB`); continue; }
       const fd = new FormData();
       fd.append('file', file);
       fd.append('category', companyDocCategory);
@@ -179,7 +179,7 @@ export default function AdminEmpresaDetail() {
     setUploadingSignReq(true);
     let count = 0;
     for (const file of files) {
-      if (file.size > 5 * 1024 * 1024) { toast.error(`${file.name} supera 5MB`); continue; }
+      if (file.size > 50 * 1024 * 1024) { toast.error(`${file.name} supera 50MB`); continue; }
       const fd = new FormData();
       fd.append('file', file);
       try {
@@ -293,7 +293,7 @@ export default function AdminEmpresaDetail() {
     setUploadingFor(workerId);
     let count = 0;
     for (const file of files) {
-      if (file.size > 5 * 1024 * 1024) { toast.error(`${file.name} supera 5MB`); continue; }
+      if (file.size > 50 * 1024 * 1024) { toast.error(`${file.name} supera 50MB`); continue; }
       const fd = new FormData();
       fd.append('file', file);
       fd.append('category', uploadCategory);

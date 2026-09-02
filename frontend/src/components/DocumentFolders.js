@@ -130,7 +130,7 @@ export default function DocumentFolders({ companyId, workerId = null }) {
     setUploading(true);
     let count = 0;
     for (const file of files) {
-      if (file.size > 10 * 1024 * 1024) { toast.error(`${file.name} supera 10MB`); continue; }
+      if (file.size > 50 * 1024 * 1024) { toast.error(`${file.name} supera 50MB`); continue; }
       const fd = new FormData();
       fd.append('file', file);
       fd.append('category', 'otros');
@@ -314,7 +314,7 @@ export default function DocumentFolders({ companyId, workerId = null }) {
           onClick={() => fileRef.current?.click()}>
           <Upload className="w-10 h-10 text-slate-300 mx-auto mb-3" />
           <p className="text-sm font-medium text-slate-600">Sube documentos o crea carpetas</p>
-          <p className="text-xs text-slate-400 mt-1">PDF, imagenes, Word, Excel — max 10MB</p>
+          <p className="text-xs text-slate-400 mt-1">PDF, imagenes, Word, Excel — max 50MB</p>
         </div>
       ) : docs.length === 0 && currentFolder ? (
         <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-slate-300 transition-colors"

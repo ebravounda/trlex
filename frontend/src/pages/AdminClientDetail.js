@@ -138,11 +138,11 @@ export default function AdminClientDetail() {
   const handleAdminUpload = async (files) => {
     if (!files || files.length === 0) return;
 
-    const MAX_SIZE = 5 * 1024 * 1024;
+    const MAX_SIZE = 50 * 1024 * 1024;
     for (const file of files) {
       if (file.size > MAX_SIZE) {
         const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
-        toast.error(`El archivo "${file.name}" pesa ${sizeMb} MB, el maximo son 5MB. Comprime en https://www.ilovepdf.com/es/comprimir_pdf`, { duration: 8000 });
+        toast.error(`El archivo "${file.name}" pesa ${sizeMb} MB, el maximo son 50MB. Comprime en https://www.ilovepdf.com/es/comprimir_pdf`, { duration: 8000 });
         return;
       }
     }

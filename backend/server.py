@@ -566,6 +566,47 @@ def _get_notify_email():
     return ""
 
 
+
+def _auto_compress_pdf(content, max_bytes=10*1024*1024):
+    """Auto-compress PDF if it exceeds max_bytes. Returns (content, was_compressed)."""
+    if len(content) <= max_bytes:
+        return content, False
+    try:
+        import pymupdf
+        from PIL import Image
+        doc = pymupdf.open(stream=content, filetype="pdf")
+        ratio = max_bytes / len(content)
+        if ratio > 0.5:
+            settings = [(120, 60), (100, 45)]
+        elif ratio > 0.2:
+            settings = [(90, 40), (70, 30)]
+        else:
+            settings = [(60, 25), (45, 15)]
+        for dpi, quality in settings:
+            new_doc = pymupdf.open()
+            for page in doc:
+                pix = page.get_pixmap(dpi=dpi)
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                img_buffer = io.BytesIO()
+                img.save(img_buffer, format="JPEG", quality=quality, optimize=True)
+                img_data = img_buffer.getvalue()
+                new_page = new_doc.new_page(width=page.rect.width, height=page.rect.height)
+                new_page.insert_image(pymupdf.Rect(0, 0, page.rect.width, page.rect.height), stream=img_data)
+            output = io.BytesIO()
+            new_doc.save(output, garbage=4, deflate=True)
+            new_doc.close()
+            result = output.getvalue()
+            if len(result) <= max_bytes:
+                doc.close()
+                logger.info(f"PDF auto-comprimido: {len(content)} -> {len(result)} bytes")
+                return result, True
+        doc.close()
+        return result, True
+    except Exception as e:
+        logger.error(f"Error auto-comprimiendo PDF: {e}")
+        return content, False
+
+
 def _generate_pin():
     import random
     return str(random.randint(100000, 999999))
@@ -736,9 +777,12 @@ async def upload_document(
         raise HTTPException(status_code=400, detail="Tipo de archivo no permitido. Solo PDF e imagenes.")
 
     data = await file.read()
-    if len(data) > 5 * 1024 * 1024:
+    if len(data) > 50 * 1024 * 1024:
         size_mb = round(len(data) / (1024 * 1024), 1)
-        raise HTTPException(status_code=400, detail=f"Tu documento pesa {size_mb} MB, el maximo son 5MB. Comprime tu archivo en https://www.ilovepdf.com/es/comprimir_pdf")
+        raise HTTPException(status_code=400, detail=f"Tu documento pesa {size_mb} MB, el maximo son 50MB.")
+
+    if content_type == "application/pdf" and len(data) > 10 * 1024 * 1024:
+        data, _ = _auto_compress_pdf(data)
 
     if category not in DOCUMENT_CATEGORIES:
         category = "otros"
@@ -1191,9 +1235,12 @@ async def admin_upload_to_client(
         raise HTTPException(status_code=400, detail="Tipo de archivo no permitido. Solo PDF e imagenes.")
 
     data = await file.read()
-    if len(data) > 5 * 1024 * 1024:
+    if len(data) > 50 * 1024 * 1024:
         size_mb = round(len(data) / (1024 * 1024), 1)
-        raise HTTPException(status_code=400, detail=f"Tu documento pesa {size_mb} MB, el maximo son 5MB. Comprime tu archivo en https://www.ilovepdf.com/es/comprimir_pdf")
+        raise HTTPException(status_code=400, detail=f"Tu documento pesa {size_mb} MB, el maximo son 50MB.")
+
+    if content_type == "application/pdf" and len(data) > 10 * 1024 * 1024:
+        data, _ = _auto_compress_pdf(data)
 
     if category not in DOCUMENT_CATEGORIES:
         category = "resolucion"
@@ -1661,11 +1708,14 @@ async def upload_company_doc(company_id: str, file: UploadFile = File(...), cate
     if not company:
         raise HTTPException(status_code=404, detail="Empresa no encontrada")
     content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Archivo supera 10MB")
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Archivo supera 50MB")
+    content_type = file.content_type or "application/octet-stream"
+    if content_type == "application/pdf" and len(content) > 10 * 1024 * 1024:
+        content, _ = _auto_compress_pdf(content)
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "bin"
     storage_path = f"{APP_NAME}/company_docs/{company_id}/{uuid.uuid4()}.{ext}"
-    result = put_object(storage_path, content, file.content_type or "application/octet-stream")
+    result = put_object(storage_path, content, content_type)
     doc = {
         "company_id": company_id,
         "worker_id": None,
@@ -2601,13 +2651,15 @@ async def upload_worker_document(
         raise HTTPException(status_code=404, detail="Trabajador no encontrado")
 
     content = await file.read()
-    MAX_SIZE = 5 * 1024 * 1024
+    MAX_SIZE = 50 * 1024 * 1024
     if len(content) > MAX_SIZE:
-        raise HTTPException(status_code=400, detail="El archivo supera los 5MB")
+        raise HTTPException(status_code=400, detail="El archivo supera los 50MB")
 
     ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
-    stored_name = f"company_{company_id}/worker_{worker_id}/{uuid.uuid4().hex}.{ext}"
     content_type = file.content_type or "application/octet-stream"
+    if content_type == "application/pdf" and len(content) > 10 * 1024 * 1024:
+        content, _ = _auto_compress_pdf(content)
+    stored_name = f"company_{company_id}/worker_{worker_id}/{uuid.uuid4().hex}.{ext}"
 
     put_object(stored_name, content, content_type)
 
@@ -2718,8 +2770,8 @@ async def replace_company_document(doc_id: str, file: UploadFile = File(...), us
     if not doc:
         raise HTTPException(status_code=404, detail="Documento no encontrado")
     content = await file.read()
-    if len(content) > 10 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Archivo supera 10MB")
+    if len(content) > 50 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="Archivo supera 50MB")
     ext = file.filename.rsplit(".", 1)[-1] if "." in file.filename else "bin"
     company_id = doc.get("company_id", "unknown")
     storage_path = f"{APP_NAME}/company_docs/{company_id}/{uuid.uuid4()}.{ext}"
@@ -3019,7 +3071,7 @@ async def upload_sign_request(
 
     content = await file.read()
     if len(content) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El archivo supera los 5MB")
+        raise HTTPException(status_code=400, detail="El archivo supera los 50MB")
 
     ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
     stored_name = f"company_{company_id}/sign_requests/{uuid.uuid4().hex}.{ext}"
@@ -3115,7 +3167,7 @@ async def upload_signed_document(
 
     content = await file.read()
     if len(content) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="El archivo supera los 5MB")
+        raise HTTPException(status_code=400, detail="El archivo supera los 50MB")
 
     ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
     stored_name = f"company_{doc['company_id']}/sign_requests/signed_{uuid.uuid4().hex}.{ext}"

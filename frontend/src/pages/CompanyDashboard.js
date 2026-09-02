@@ -166,7 +166,7 @@ export default function CompanyDashboard() {
     setUploadingFor(workerId);
     let count = 0;
     for (const file of files) {
-      if (file.size > 5 * 1024 * 1024) { toast.error(`${file.name} supera 5MB`); continue; }
+      if (file.size > 50 * 1024 * 1024) { toast.error(`${file.name} supera 50MB`); continue; }
       const fd = new FormData();
       fd.append('file', file);
       fd.append('category', category);
@@ -208,7 +208,7 @@ export default function CompanyDashboard() {
     if (!files?.length) return;
     setUploadingSignedFor(docId);
     const file = files[0];
-    if (file.size > 5 * 1024 * 1024) { toast.error('El archivo supera 5MB'); setUploadingSignedFor(null); return; }
+    if (file.size > 50 * 1024 * 1024) { toast.error('El archivo supera 50MB'); setUploadingSignedFor(null); return; }
     const fd = new FormData();
     fd.append('file', file);
     try {
