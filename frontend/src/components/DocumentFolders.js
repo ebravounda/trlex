@@ -37,6 +37,7 @@ export default function DocumentFolders({ companyId, workerId = null }) {
   const [docNewName, setDocNewName] = useState('');
   const replaceRef = useRef(null);
   const [replacingDocId, setReplacingDocId] = useState(null);
+  const [dragOverZone, setDragOverZone] = useState(false);
   const fileRef = useRef(null);
 
   const fetchFolders = async () => {
@@ -255,9 +256,35 @@ export default function DocumentFolders({ companyId, workerId = null }) {
               dragOverFolder === f.id ? 'border-sky-400 bg-sky-50 shadow-md ring-2 ring-sky-200' : 'border-slate-200 hover:border-slate-300'
             }`}
               onClick={() => openFolder(f)}
-              onDragOver={e => { e.preventDefault(); setDragOverFolder(f.id); }}
+              onDragOver={e => { e.preventDefault(); if (e.dataTransfer.types.includes('Files')) { /* file from explorer to folder */ } setDragOverFolder(f.id); }}
               onDragLeave={() => setDragOverFolder(null)}
-              onDrop={e => { e.preventDefault(); setDragOverFolder(null); if (draggingDoc) { handleMoveDocToFolder(draggingDoc, f.id); setDraggingDoc(null); } }}
+              onDrop={e => { e.preventDefault(); e.stopPropagation(); setDragOverFolder(null); setDragOverZone(false);
+                const files = Array.from(e.dataTransfer.files);
+                if (files.length > 0) {
+                  // Files dropped from explorer onto folder - upload directly into it
+                  const prev = currentFolder;
+                  const uploadToFolder = async () => {
+                    setUploading(true);
+                    let count = 0;
+                    for (const file of files) {
+                      if (file.size > 50 * 1024 * 1024) { toast.error(`${file.name} supera 50MB`); continue; }
+                      const fd = new FormData();
+                      fd.append('file', file);
+                      fd.append('category', 'otros');
+                      fd.append('folder_id', f.id);
+                      const uploadUrl = workerId
+                        ? `/companies/${companyId}/workers/${workerId}/documents/upload`
+                        : `/companies/${companyId}/documents/upload`;
+                      try { await api.post(uploadUrl, fd); count++; } catch { toast.error(`Error: ${file.name}`); }
+                    }
+                    if (count > 0) { toast.success(`${count} doc(s) subido(s) a ${f.name}`); fetchFolders(); fetchDocs(prev); }
+                    setUploading(false);
+                  };
+                  uploadToFolder();
+                } else if (draggingDoc) {
+                  handleMoveDocToFolder(draggingDoc, f.id); setDraggingDoc(null);
+                }
+              }}
               data-testid={`folder-${f.id}`}>
               {/* Color bar */}
               <div className="absolute top-0 left-0 right-0 h-1.5 rounded-t-xl" style={{ backgroundColor: f.color || '#64748b' }} />
@@ -309,18 +336,24 @@ export default function DocumentFolders({ companyId, workerId = null }) {
       )}
 
       {/* Documents */}
+      <div
+        onDragOver={e => { e.preventDefault(); e.stopPropagation(); if (e.dataTransfer.types.includes('Files')) setDragOverZone(true); }}
+        onDragLeave={e => { e.preventDefault(); setDragOverZone(false); }}
+        onDrop={e => { e.preventDefault(); setDragOverZone(false); const files = Array.from(e.dataTransfer.files); if (files.length > 0) handleUpload(files); }}
+        className={`rounded-xl transition-all ${dragOverZone ? 'ring-2 ring-sky-400 bg-sky-50/50' : ''}`}
+      >
       {docs.length === 0 && folders.length === 0 ? (
-        <div className="border-2 border-dashed border-slate-200 rounded-xl p-10 text-center cursor-pointer hover:border-slate-300 transition-colors"
+        <div className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${dragOverZone ? 'border-sky-400 bg-sky-50' : 'border-slate-200 hover:border-slate-300'}`}
           onClick={() => fileRef.current?.click()}>
           <Upload className="w-10 h-10 text-slate-300 mx-auto mb-3" />
-          <p className="text-sm font-medium text-slate-600">Sube documentos o crea carpetas</p>
-          <p className="text-xs text-slate-400 mt-1">PDF, imagenes, Word, Excel — max 50MB</p>
+          <p className="text-sm font-medium text-slate-600">{dragOverZone ? 'Suelta los archivos aqui' : 'Arrastra archivos o haz clic para subir'}</p>
+          <p className="text-xs text-slate-400 mt-1">PDF, imagenes, Word, Excel — max 50MB — multiples archivos</p>
         </div>
       ) : docs.length === 0 && currentFolder ? (
-        <div className="border-2 border-dashed border-slate-200 rounded-xl p-8 text-center cursor-pointer hover:border-slate-300 transition-colors"
+        <div className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${dragOverZone ? 'border-sky-400 bg-sky-50' : 'border-slate-200 hover:border-slate-300'}`}
           onClick={() => fileRef.current?.click()}>
           <Upload className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-          <p className="text-sm text-slate-500">Carpeta vacia — sube archivos aqui</p>
+          <p className="text-sm text-slate-500">{dragOverZone ? 'Suelta los archivos aqui' : 'Carpeta vacia — arrastra archivos o haz clic'}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -366,6 +399,7 @@ export default function DocumentFolders({ companyId, workerId = null }) {
           ))}
         </div>
       )}
+      </div>
 
       {/* Preview Dialog */}
       <Dialog open={!!previewDoc} onOpenChange={closePreview}>

@@ -98,7 +98,7 @@ export default function ClientDashboard() {
         const sizeMb = (file.size / (1024 * 1024)).toFixed(1);
         toast.error(
           <div>
-            <p className="font-medium">Tu documento "{file.name}" pesa {sizeMb} MB, el maximo son 5MB.</p>
+            <p className="font-medium">Tu documento "{file.name}" pesa {sizeMb} MB, el maximo son 50MB.</p>
             <p className="mt-1">Comprime tu archivo aqui: <a href="https://www.ilovepdf.com/es/comprimir_pdf" target="_blank" rel="noopener noreferrer" className="underline font-semibold">ilovepdf.com</a></p>
           </div>,
           { duration: 8000 }
@@ -351,7 +351,7 @@ export default function ClientDashboard() {
                 {uploading ? 'Subiendo archivos...' : 'Arrastra tus documentos aqui'}
               </p>
               <p className="text-sm text-slate-500 mt-1">
-                o haz clic para seleccionar archivos (PDF, JPG, PNG - Max 5MB)
+                o haz clic para seleccionar archivos (PDF, JPG, PNG - Max 50MB)
               </p>
             </div>
           </div>
