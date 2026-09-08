@@ -1,0 +1,63 @@
+{
+  "summary": "Iter12 Tareas module enhancements fully verified. Backend: 11/11 pytest pass covering numero_expediente on create/update, task document upload/list/download/delete, send-documents-email endpoint, comment add, and 400 on send-docs when no attachments. Frontend Playwright end-to-end on /admin/tareas verified: admin login via 'Acceso Administrador' + Iniciar sesion, Kanban columns (pendiente/en_proceso/completada) render, list<->kanban toggle, priority filter (4 options), search input, create-task dialog with numero_expediente field, task creation persists all fields, task-card click opens task-detail-dialog showing EXP-UI-001, edit mode toggles all edit inputs (title/description/priority/status/due_date/expediente/assign), save persists numero_expediente edit (EXP-UI-001 -> EXP-UI-EDITED verified via DOM), file upload via task-doc-file-input adds document (task_test.txt visible in doc list), send-docs-email-btn produces success toast 'Documentos enviados a Eduardo Test', comment add works and renders, task delete cleans up. All data-testid selectors present per spec.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "TaskDetailDialog / TaskFormDialog", "issues": ["Radix DialogContent missing DialogTitle -> console warning 'DialogContent requires a DialogTitle for accessibility'. Non-blocking a11y warning; wrap title in DialogTitle or add VisuallyHidden DialogTitle."]}
+    ]
+  },
+  "passed_tests": [
+    "Backend POST /api/tasks stores numero_expediente",
+    "Backend PUT /api/tasks/{id} updates numero_expediente",
+    "Backend PUT /api/tasks/{id} updates title/priority/status/description together",
+    "Backend POST /api/tasks/{id}/documents/upload accepts PDF (multipart)",
+    "Backend GET /api/tasks/{id}/documents lists uploaded docs with id/filename/size",
+    "Backend GET /api/tasks/{id} response includes documents array + numero_expediente",
+    "Backend GET /api/tasks/{id}/documents/{doc_id}/download returns file bytes",
+    "Backend POST /api/tasks/{id}/send-documents returns 200 with message when docs present",
+    "Backend POST /api/tasks/{id}/send-documents returns 400 when no docs attached",
+    "Backend DELETE /api/tasks/{id}/documents/{doc_id} soft-deletes and filter excludes it",
+    "Backend POST /api/tasks/{id}/comments adds comment",
+    "Frontend admin login + navigation to /admin/tareas",
+    "Frontend Kanban columns pendiente/en_proceso/completada visible",
+    "Frontend view-kanban-btn <-> view-list-btn toggle",
+    "Frontend filter-priority dropdown (4 options) + task-search input",
+    "Frontend create-task-btn opens create-task-dialog with task-expediente-input visible",
+    "Frontend create-task submit persists task (title/description/priority/expediente/due_date/assigned_to)",
+    "Frontend task-card click opens task-detail-dialog showing numero_expediente",
+    "Frontend edit-task-btn -> edit-task-expediente/status/assign visible; save-task-btn persists numero_expediente change",
+    "Frontend task-doc-file-input.set_input_files uploads and renders new task-doc-{id} row",
+    "Frontend send-docs-email-btn triggers backend send and shows success toast 'Documentos enviados a Eduardo Test'",
+    "Frontend task-comment-input + task-comment-send-btn adds comment (rendered)",
+    "Frontend delete-task-btn deletes task"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_tareas_iter12.py",
+    "/app/test_reports/pytest/iter12.xml"
+  ],
+  "action_items": [
+    "(A11y, minor) Wrap dialog headers in <DialogTitle> (or VisuallyHidden DialogTitle) in TaskDetailDialog and TaskFormDialog to remove Radix console warning.",
+    "(Consistency, minor) Backend TaskUpdateInput.description uses default \"\" while server code does `if body.description is not None and body.description != \"\"` — this means you can't clear description via PUT. Consider allowing empty string to clear.",
+    "(Consistency, minor) Update endpoint validates status against [pendiente, en_proceso, completada]; ensure frontend never sends stale values like 'en_progreso' (it doesn't today, but doc it)."
+  ],
+  "critical_code_review_comments": [
+    "server.py update_task: `if body.description is not None and body.description != ''` silently drops empty-string updates, so users cannot clear description via PUT. Recommend `if body.description is not None: update_fields['description'] = body.description.strip()`.",
+    "server.py send_task_documents_email: attachments are loaded from object storage inside a BackgroundTasks handler using base64 in-memory. For large multi-doc tasks (50MB * N) this can blow memory. Consider streaming or size cap on total attachment size (Resend also has ~40MB per email limit).",
+    "server.py _send_task_documents_email_bg: reads sync_db.settings on every send; consider caching. If resend fails silently (try/except at line 3826), user still sees success toast — no error surfaced. Consider persisting a delivery status on the task.",
+    "AdminTareas.js: file is 927 lines — approaching the >700 line threshold. Consider splitting TaskCard, TaskDetailDialog, TaskFormDialog into separate files under /pages/tareas/.",
+    "AdminTareas.js dropzone (task-doc-dropzone) uploads files sequentially in a loop; for many attachments consider Promise.all with concurrency cap.",
+    "Backend allows any authenticated staff/admin to send docs of any task — no check that current user is the task creator or assignee. Consider ownership check depending on business rules."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_tareas_iter12.py (new)"
+  ],
+  "success_rate": {"backend": "100% (11/11)", "frontend": "100% for tested flows"},
+  "test_credentials": {"admin": "malcafuz@tramilex.es / Admin123!"},
+  "seed_data_creation": "Ephemeral: created TEST_iter12 tasks (both via API and via UI), uploaded test_iter12.pdf and task_test.txt attachments, added comment. All cleaned up (DELETE /api/tasks/{id}) at end of tests and via UI delete-task-btn.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iter12 Tareas endpoints (POST/PUT with numero_expediente, /documents CRUD, /send-documents) all verified. Backend status enum is [pendiente, en_proceso, completada] (note: 'en_proceso' NOT 'en_progreso'). Frontend AdminTareas.js has full data-testid coverage; key ones: admin-tareas, column-{status}, view-kanban-btn, view-list-btn, task-search, filter-priority, create-task-btn, task-{title|description|priority|due-date|expediente|assign}-input, submit-task-btn, task-detail-dialog, edit-task-btn, edit-task-{title|description|priority|status|due-date|expediente|assign}, save-task-btn, task-doc-dropzone, task-doc-file-input, task-doc-{id}, download-doc-{id}, delete-doc-{id}, send-docs-email-btn, task-comment-input, task-comment-send-btn, delete-task-btn, task-status-select. Existing task 'Revisar documentos Regularizacion Empresa Demo' still present assigned to Ana Asistente.",
+  "rca of the issue": "Feature verification only, no bug fixes required. Resend integration may not be configured in preview env, but send-documents endpoint returns 200 (schedules BackgroundTask + fallback to _send_email); UI shows success toast regardless of actual delivery — see review comment above about no delivery status surfacing."
+}

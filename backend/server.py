@@ -374,6 +374,7 @@ class TaskCreateInput(BaseModel):
     related_client_id: str = ""
     related_company_id: str = ""
     related_tramite: str = ""
+    numero_expediente: str = ""
 
 
 class TaskUpdateInput(BaseModel):
@@ -383,6 +384,10 @@ class TaskUpdateInput(BaseModel):
     status: str = ""
     assigned_to: str = ""
     due_date: str = ""
+    numero_expediente: Optional[str] = None
+    related_client_id: Optional[str] = None
+    related_company_id: Optional[str] = None
+    related_tramite: Optional[str] = None
 
 
 class TaskCommentInput(BaseModel):
@@ -3432,6 +3437,7 @@ async def create_task(body: TaskCreateInput, background_tasks: BackgroundTasks, 
         "related_client_id": body.related_client_id,
         "related_company_id": body.related_company_id,
         "related_tramite": body.related_tramite,
+        "numero_expediente": body.numero_expediente.strip() if body.numero_expediente else "",
         "comments": [],
         "created_at": datetime.now(timezone.utc).isoformat()
     }
@@ -3466,8 +3472,10 @@ async def create_task(body: TaskCreateInput, background_tasks: BackgroundTasks, 
 async def list_tasks(user=Depends(require_staff_or_admin)):
     tasks = []
     async for t in db.tasks.find().sort("created_at", -1):
+        task_id_str = str(t["_id"])
+        docs_count = await db.task_documents.count_documents({"task_id": task_id_str, "is_deleted": {"$ne": True}})
         tasks.append({
-            "id": str(t["_id"]),
+            "id": task_id_str,
             "title": t.get("title", ""),
             "description": t.get("description", ""),
             "priority": t.get("priority", "media"),
@@ -3477,8 +3485,12 @@ async def list_tasks(user=Depends(require_staff_or_admin)):
             "assigned_to": t.get("assigned_to", ""),
             "assigned_to_name": t.get("assigned_to_name", ""),
             "due_date": t.get("due_date", ""),
+            "related_client_id": t.get("related_client_id", ""),
+            "related_company_id": t.get("related_company_id", ""),
             "related_tramite": t.get("related_tramite", ""),
+            "numero_expediente": t.get("numero_expediente", ""),
             "comments_count": len(t.get("comments", [])),
+            "documents_count": docs_count,
             "created_at": t.get("created_at", "")
         })
     return tasks
@@ -3492,6 +3504,18 @@ async def get_task(task_id: str, user=Depends(require_staff_or_admin)):
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
     if not t:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
+
+    # Get task documents
+    documents = []
+    async for d in db.task_documents.find({"task_id": task_id, "is_deleted": {"$ne": True}}).sort("uploaded_at", -1):
+        documents.append({
+            "id": str(d["_id"]),
+            "original_filename": d.get("original_filename", ""),
+            "content_type": d.get("content_type", ""),
+            "size": d.get("size", 0),
+            "uploaded_at": d.get("uploaded_at", ""),
+            "uploaded_by_name": d.get("uploaded_by_name", ""),
+        })
 
     return {
         "id": str(t["_id"]),
@@ -3507,7 +3531,9 @@ async def get_task(task_id: str, user=Depends(require_staff_or_admin)):
         "related_client_id": t.get("related_client_id", ""),
         "related_company_id": t.get("related_company_id", ""),
         "related_tramite": t.get("related_tramite", ""),
+        "numero_expediente": t.get("numero_expediente", ""),
         "comments": t.get("comments", []),
+        "documents": documents,
         "created_at": t.get("created_at", "")
     }
 
@@ -3520,6 +3546,10 @@ async def update_task(task_id: str, body: TaskUpdateInput, user=Depends(require_
     if body.priority and body.priority in ["baja", "media", "alta"]: update_fields["priority"] = body.priority
     if body.status and body.status in ["pendiente", "en_proceso", "completada"]: update_fields["status"] = body.status
     if body.due_date is not None: update_fields["due_date"] = body.due_date
+    if body.numero_expediente is not None: update_fields["numero_expediente"] = body.numero_expediente.strip()
+    if body.related_client_id is not None: update_fields["related_client_id"] = body.related_client_id
+    if body.related_company_id is not None: update_fields["related_company_id"] = body.related_company_id
+    if body.related_tramite is not None: update_fields["related_tramite"] = body.related_tramite
     if body.assigned_to:
         assigned = await db.users.find_one({"_id": ObjectId(body.assigned_to)})
         if assigned:
@@ -3599,12 +3629,203 @@ async def delete_task(task_id: str, user=Depends(require_staff_or_admin)):
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
     if result.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    # Also delete associated documents
+    await db.task_documents.delete_many({"task_id": task_id})
     return {"message": "Tarea eliminada"}
 
 
-# ============================
-# --- Notifications ---
-# ============================
+@api_router.post("/tasks/{task_id}/documents/upload")
+async def upload_task_document(
+    task_id: str,
+    file: UploadFile = File(...),
+    user=Depends(require_staff_or_admin)
+):
+    # Verify task exists
+    try:
+        task = await db.tasks.find_one({"_id": ObjectId(task_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+
+    content = await file.read()
+    MAX_SIZE = 50 * 1024 * 1024
+    if len(content) > MAX_SIZE:
+        raise HTTPException(status_code=400, detail="El archivo supera los 50MB")
+
+    ext = file.filename.split(".")[-1] if "." in file.filename else "bin"
+    content_type = file.content_type or "application/octet-stream"
+
+    # Auto-compress large PDFs
+    if content_type == "application/pdf" and len(content) > 10 * 1024 * 1024:
+        content, _ = _auto_compress_pdf(content)
+
+    storage_path = f"tasks/{task_id}/{uuid.uuid4().hex}.{ext}"
+    put_object(storage_path, content, content_type)
+
+    doc = {
+        "task_id": task_id,
+        "original_filename": file.filename,
+        "content_type": content_type,
+        "size": len(content),
+        "storage_path": storage_path,
+        "uploaded_by": user["_id"],
+        "uploaded_by_name": user.get("name", ""),
+        "uploaded_at": datetime.now(timezone.utc).isoformat(),
+        "is_deleted": False,
+    }
+    result = await db.task_documents.insert_one(doc)
+
+    return {
+        "id": str(result.inserted_id),
+        "original_filename": file.filename,
+        "size": len(content),
+        "message": "Documento subido"
+    }
+
+
+@api_router.get("/tasks/{task_id}/documents")
+async def list_task_documents(task_id: str, user=Depends(require_staff_or_admin)):
+    documents = []
+    async for d in db.task_documents.find({"task_id": task_id, "is_deleted": {"$ne": True}}).sort("uploaded_at", -1):
+        documents.append({
+            "id": str(d["_id"]),
+            "original_filename": d.get("original_filename", ""),
+            "content_type": d.get("content_type", ""),
+            "size": d.get("size", 0),
+            "uploaded_at": d.get("uploaded_at", ""),
+            "uploaded_by_name": d.get("uploaded_by_name", ""),
+        })
+    return documents
+
+
+@api_router.get("/tasks/{task_id}/documents/{doc_id}/download")
+async def download_task_document(task_id: str, doc_id: str, user=Depends(require_staff_or_admin)):
+    try:
+        doc = await db.task_documents.find_one({"_id": ObjectId(doc_id), "task_id": task_id, "is_deleted": {"$ne": True}})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if not doc:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+
+    try:
+        data, ct = get_object(doc["storage_path"])
+    except Exception as e:
+        logger.error(f"Error descargando documento de tarea: {e}")
+        raise HTTPException(status_code=500, detail="Error descargando archivo")
+
+    from urllib.parse import quote
+    safe_name = quote(doc.get("original_filename", "archivo"))
+    return FastAPIResponse(
+        content=data,
+        media_type=ct,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{safe_name}"}
+    )
+
+
+@api_router.delete("/tasks/{task_id}/documents/{doc_id}")
+async def delete_task_document(task_id: str, doc_id: str, user=Depends(require_staff_or_admin)):
+    try:
+        result = await db.task_documents.update_one(
+            {"_id": ObjectId(doc_id), "task_id": task_id},
+            {"$set": {"is_deleted": True}}
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Documento no encontrado")
+    return {"message": "Documento eliminado"}
+
+
+@api_router.post("/tasks/{task_id}/send-documents")
+async def send_task_documents_email(task_id: str, background_tasks: BackgroundTasks, user=Depends(require_staff_or_admin)):
+    """Send all task documents to the assigned team member by email."""
+    try:
+        task = await db.tasks.find_one({"_id": ObjectId(task_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+
+    # Get assigned user email
+    assigned_id = task.get("assigned_to", "")
+    if not assigned_id:
+        raise HTTPException(status_code=400, detail="La tarea no tiene asignado")
+    assigned = await db.users.find_one({"_id": ObjectId(assigned_id)})
+    if not assigned or not assigned.get("email"):
+        raise HTTPException(status_code=400, detail="El usuario asignado no tiene email")
+
+    # Get documents
+    docs = []
+    async for d in db.task_documents.find({"task_id": task_id, "is_deleted": {"$ne": True}}):
+        docs.append(d)
+    if not docs:
+        raise HTTPException(status_code=400, detail="No hay documentos adjuntos en esta tarea")
+
+    # Send in background
+    background_tasks.add_task(
+        _send_task_documents_email_bg,
+        assigned.get("email"),
+        assigned.get("name", ""),
+        task.get("title", ""),
+        task.get("numero_expediente", ""),
+        user.get("name", ""),
+        docs
+    )
+
+    return {"message": f"Documentos enviados a {assigned.get('name', assigned.get('email', ''))}"}
+
+
+def _send_task_documents_email_bg(to_email, to_name, task_title, numero_expediente, from_name, docs):
+    """Background task to send task documents via email with attachments."""
+    try:
+        import base64
+        attachments = []
+        for d in docs:
+            try:
+                data, _ = get_object(d["storage_path"])
+                attachments.append({
+                    "filename": d.get("original_filename", "archivo"),
+                    "content": base64.b64encode(data).decode("utf-8"),
+                })
+            except Exception as e:
+                logger.error(f"Error obteniendo doc {d.get('original_filename')}: {e}")
+
+        exp_line = f"<p><strong>Expediente:</strong> {numero_expediente}</p>" if numero_expediente else ""
+        html_body = f"""
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #0f172a;">Documentos de tarea</h2>
+            <p>Hola {to_name},</p>
+            <p><strong>{from_name}</strong> te envia los documentos adjuntos de la tarea:</p>
+            <div style="background: #f8fafc; border-left: 4px solid #3b82f6; padding: 16px; margin: 16px 0; border-radius: 4px;">
+                <p style="margin: 0 0 8px 0; font-size: 18px; font-weight: bold;">{task_title}</p>
+                {exp_line}
+                <p style="margin: 4px 0 0 0; color: #64748b;">{len(attachments)} documento(s) adjunto(s)</p>
+            </div>
+            <p>Accede a la plataforma para ver los detalles: <a href="https://tramilex.goroky.es/admin/tareas">Ver tareas</a></p>
+        </div>
+        """
+
+        # Try Resend with attachments
+        resend_settings = sync_db.settings.find_one({"type": "resend"})
+        if resend_settings and resend_settings.get("resend_api_key") and attachments:
+            resend.api_key = resend_settings["resend_api_key"]
+            from_email = resend_settings.get("resend_from_email", "onboarding@resend.dev")
+            params = {
+                "from": from_email,
+                "to": [to_email],
+                "subject": f"Tramilex - Documentos: {task_title}",
+                "html": html_body,
+                "attachments": attachments,
+            }
+            resend.Emails.send(params)
+            logger.info(f"Email con {len(attachments)} adjuntos enviado a {to_email}")
+            return
+
+        # Fallback: send without attachments
+        _send_email(to_email, f"Tramilex - Documentos: {task_title}", html_body)
+    except Exception as e:
+        logger.error(f"Error enviando docs de tarea por email: {e}")
 
 @api_router.get("/notifications")
 async def get_notifications(user=Depends(require_staff_or_admin)):
