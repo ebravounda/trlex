@@ -79,21 +79,25 @@ function AudioPlayer({ audio, taskId, onDelete }) {
   const togglePlay = (e) => {
     e.stopPropagation();
     if (!audioRef.current) {
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('tramilex_token');
       const backendUrl = process.env.REACT_APP_BACKEND_URL;
       const audioEl = new Audio();
       fetch(`${backendUrl}/api/tasks/${taskId}/audios/${audio.id}/stream`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
-        .then(r => r.blob())
+        .then(r => {
+          if (!r.ok) throw new Error('Error ' + r.status);
+          return r.blob();
+        })
         .then(blob => {
           if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
           const url = URL.createObjectURL(blob);
           blobUrlRef.current = url;
           audioEl.src = url;
           audioEl.onended = () => setPlaying(false);
+          audioEl.onerror = () => { setPlaying(false); toast.error('Formato no soportado'); };
           audioRef.current = audioEl;
-          audioEl.play();
+          audioEl.play().catch(() => toast.error('No se pudo reproducir'));
           setPlaying(true);
         })
         .catch(() => toast.error('Error reproduciendo'));
@@ -383,7 +387,18 @@ function TaskDetailDialog({ task, open, onClose, staff, user, onRefresh }) {
   const startRecording = async () => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      // Detect best supported format (Safari uses mp4, Chrome uses webm)
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : MediaRecorder.isTypeSupported('audio/mp4')
+            ? 'audio/mp4'
+            : '';
+      const options = mimeType ? { mimeType } : {};
+      const mediaRecorder = new MediaRecorder(stream, options);
+      const actualMime = mediaRecorder.mimeType || mimeType || 'audio/webm';
+      const ext = actualMime.includes('mp4') ? 'mp4' : actualMime.includes('m4a') ? 'm4a' : 'webm';
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
 
@@ -395,12 +410,12 @@ function TaskDetailDialog({ task, open, onClose, staff, user, onRefresh }) {
         stream.getTracks().forEach(t => t.stop());
         clearInterval(recordingTimerRef.current);
         setRecordingTime(0);
-        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const blob = new Blob(audioChunksRef.current, { type: actualMime });
         if (blob.size > 0) {
           setAudioUploading(true);
           try {
             const formData = new FormData();
-            formData.append('file', blob, `audio_${Date.now()}.webm`);
+            formData.append('file', blob, `audio_${Date.now()}.${ext}`);
             const res = await api.post(`/tasks/${task.id}/audio/upload`, formData, {
               headers: { 'Content-Type': 'multipart/form-data' },
             });

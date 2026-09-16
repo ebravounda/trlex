@@ -64,7 +64,14 @@ export default function NotificationBell() {
     // Navigate to task if it's a task-related notification
     if (n.task_id && (n.type === 'task_assigned' || n.type === 'task_reassigned' || n.type === 'task_comment' || n.type === 'task_reminder')) {
       setOpen(false);
-      navigate(`/admin/tareas?task=${n.task_id}`);
+      // Use window.location for reliable navigation (navigate() doesn't remount same route)
+      const targetUrl = `/admin/tareas?task=${n.task_id}`;
+      if (window.location.pathname === '/admin/tareas') {
+        // Already on tareas page - force reload with param
+        window.location.href = targetUrl;
+      } else {
+        navigate(targetUrl);
+      }
     }
   };
 
