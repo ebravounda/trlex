@@ -1,9 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import api from '@/lib/api';
 import { Bell, Check, CheckCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function NotificationBell() {
+  const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
@@ -57,6 +59,15 @@ export default function NotificationBell() {
     } catch {}
   };
 
+  const handleNotificationClick = async (n) => {
+    if (!n.read) await markRead(n.id);
+    // Navigate to task if it's a task-related notification
+    if (n.task_id && (n.type === 'task_assigned' || n.type === 'task_reassigned' || n.type === 'task_comment' || n.type === 'task_reminder')) {
+      setOpen(false);
+      navigate(`/admin/tareas?task=${n.task_id}`);
+    }
+  };
+
   function formatDate(iso) {
     if (!iso) return '';
     const d = new Date(iso);
@@ -96,8 +107,9 @@ export default function NotificationBell() {
               notifications.map(n => (
                 <div
                   key={n.id}
-                  className={`px-4 py-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50 ${!n.read ? 'bg-sky-50/50' : ''}`}
-                  onClick={() => { if (!n.read) markRead(n.id); }}
+                  className={`px-4 py-3 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors ${!n.read ? 'bg-sky-50/50' : ''}`}
+                  onClick={() => handleNotificationClick(n)}
+                  data-testid={`notification-item-${n.id}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">

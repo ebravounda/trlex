@@ -29,6 +29,10 @@ from tramites_data import TRAMITES, get_tramites_by_country, get_tramite_docs
 import stripe
 import pymongo
 import resend
+import openai
+import tempfile
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -56,6 +60,10 @@ STORAGE_URL = "https://integrations.emergentagent.com/objstore/api/v1/storage"
 EMERGENT_KEY = os.environ.get("EMERGENT_LLM_KEY")
 APP_NAME = "tramilex"
 storage_key = None
+
+# OpenAI for Whisper transcription
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+openai_client = openai.OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 
 
 def init_storage():
@@ -3474,6 +3482,7 @@ async def list_tasks(user=Depends(require_staff_or_admin)):
     async for t in db.tasks.find().sort("created_at", -1):
         task_id_str = str(t["_id"])
         docs_count = await db.task_documents.count_documents({"task_id": task_id_str, "is_deleted": {"$ne": True}})
+        audios_count = await db.task_audios.count_documents({"task_id": task_id_str})
         tasks.append({
             "id": task_id_str,
             "title": t.get("title", ""),
@@ -3491,6 +3500,7 @@ async def list_tasks(user=Depends(require_staff_or_admin)):
             "numero_expediente": t.get("numero_expediente", ""),
             "comments_count": len(t.get("comments", [])),
             "documents_count": docs_count,
+            "audios_count": audios_count,
             "created_at": t.get("created_at", "")
         })
     return tasks
@@ -3517,6 +3527,17 @@ async def get_task(task_id: str, user=Depends(require_staff_or_admin)):
             "uploaded_by_name": d.get("uploaded_by_name", ""),
         })
 
+    # Get task audios
+    audios = []
+    async for a in db.task_audios.find({"task_id": task_id}).sort("created_at", -1):
+        audios.append({
+            "id": str(a["_id"]),
+            "transcription": a.get("transcription", ""),
+            "size": a.get("size", 0),
+            "recorded_by_name": a.get("recorded_by_name", ""),
+            "created_at": a.get("created_at", ""),
+        })
+
     return {
         "id": str(t["_id"]),
         "title": t.get("title", ""),
@@ -3534,6 +3555,7 @@ async def get_task(task_id: str, user=Depends(require_staff_or_admin)):
         "numero_expediente": t.get("numero_expediente", ""),
         "comments": t.get("comments", []),
         "documents": documents,
+        "audios": audios,
         "created_at": t.get("created_at", "")
     }
 
@@ -3826,6 +3848,242 @@ def _send_task_documents_email_bg(to_email, to_name, task_title, numero_expedien
         _send_email(to_email, f"Tramilex - Documentos: {task_title}", html_body)
     except Exception as e:
         logger.error(f"Error enviando docs de tarea por email: {e}")
+
+
+# ============================
+# --- Task Audio (Record + Transcribe) ---
+# ============================
+
+@api_router.post("/tasks/{task_id}/audio/upload")
+async def upload_task_audio(
+    task_id: str,
+    file: UploadFile = File(...),
+    user=Depends(require_staff_or_admin)
+):
+    """Upload audio to a task. Stores in Object Storage and transcribes with Whisper."""
+    try:
+        task = await db.tasks.find_one({"_id": ObjectId(task_id)})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+    if not task:
+        raise HTTPException(status_code=404, detail="Tarea no encontrada")
+
+    content = await file.read()
+    if len(content) > 25 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="El audio supera los 25MB")
+
+    ext = file.filename.split(".")[-1] if "." in file.filename else "webm"
+    content_type = file.content_type or "audio/webm"
+    storage_path = f"tasks/{task_id}/audio/{uuid.uuid4().hex}.{ext}"
+    put_object(storage_path, content, content_type)
+
+    # Transcribe with Whisper
+    transcription = ""
+    if openai_client:
+        try:
+            with tempfile.NamedTemporaryFile(suffix=f".{ext}", delete=True) as tmp:
+                tmp.write(content)
+                tmp.flush()
+                tmp.seek(0)
+                result = openai_client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=open(tmp.name, "rb"),
+                    language="es",
+                    response_format="text"
+                )
+                transcription = result.strip() if isinstance(result, str) else str(result).strip()
+        except Exception as e:
+            logger.error(f"Error transcribiendo audio: {e}")
+
+    audio_doc = {
+        "task_id": task_id,
+        "storage_path": storage_path,
+        "original_filename": file.filename,
+        "content_type": content_type,
+        "size": len(content),
+        "transcription": transcription,
+        "recorded_by": user["_id"],
+        "recorded_by_name": user.get("name", ""),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    result = await db.task_audios.insert_one(audio_doc)
+
+    return {
+        "id": str(result.inserted_id),
+        "transcription": transcription,
+        "size": len(content),
+        "message": "Audio subido y transcrito" if transcription else "Audio subido"
+    }
+
+
+@api_router.get("/tasks/{task_id}/audios")
+async def list_task_audios(task_id: str, user=Depends(require_staff_or_admin)):
+    audios = []
+    async for a in db.task_audios.find({"task_id": task_id}).sort("created_at", -1):
+        audios.append({
+            "id": str(a["_id"]),
+            "transcription": a.get("transcription", ""),
+            "size": a.get("size", 0),
+            "recorded_by_name": a.get("recorded_by_name", ""),
+            "created_at": a.get("created_at", ""),
+        })
+    return audios
+
+
+@api_router.get("/tasks/{task_id}/audios/{audio_id}/stream")
+async def stream_task_audio(task_id: str, audio_id: str, user=Depends(require_staff_or_admin)):
+    try:
+        audio = await db.task_audios.find_one({"_id": ObjectId(audio_id), "task_id": task_id})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Audio no encontrado")
+    if not audio:
+        raise HTTPException(status_code=404, detail="Audio no encontrado")
+
+    try:
+        data, ct = get_object(audio["storage_path"])
+    except Exception as e:
+        logger.error(f"Error obteniendo audio: {e}")
+        raise HTTPException(status_code=500, detail="Error obteniendo audio")
+
+    return FastAPIResponse(
+        content=data,
+        media_type=audio.get("content_type", "audio/webm"),
+        headers={"Content-Disposition": f"inline; filename=\"audio.{audio.get('content_type', 'webm').split('/')[-1]}\""}
+    )
+
+
+@api_router.delete("/tasks/{task_id}/audios/{audio_id}")
+async def delete_task_audio(task_id: str, audio_id: str, user=Depends(require_staff_or_admin)):
+    try:
+        result = await db.task_audios.delete_one({"_id": ObjectId(audio_id), "task_id": task_id})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Audio no encontrado")
+    if result.deleted_count == 0:
+        raise HTTPException(status_code=404, detail="Audio no encontrado")
+    return {"message": "Audio eliminado"}
+
+
+# ============================
+# --- Task Reminders Scheduler ---
+# ============================
+
+REMINDER_DAYS = [5, 3, 2, 1]
+REMINDER_EXTRA_EMAIL = "kortiz@tramilex.es"
+
+async def check_task_reminders():
+    """Check for upcoming task deadlines and send reminders."""
+    try:
+        now = datetime.now(timezone.utc)
+        today_str = now.strftime("%Y-%m-%d")
+
+        for days_before in REMINDER_DAYS:
+            target_date = (now + timedelta(days=days_before)).strftime("%Y-%m-%d")
+
+            # Find tasks with this due date that are not completed
+            async for task in db.tasks.find({
+                "due_date": target_date,
+                "status": {"$ne": "completada"}
+            }):
+                task_id = str(task["_id"])
+                reminder_key = f"{task_id}_{days_before}d"
+
+                # Check if this reminder was already sent
+                existing = await db.task_reminders.find_one({"reminder_key": reminder_key})
+                if existing:
+                    continue
+
+                # Mark as sent
+                await db.task_reminders.insert_one({
+                    "reminder_key": reminder_key,
+                    "task_id": task_id,
+                    "days_before": days_before,
+                    "sent_at": now.isoformat()
+                })
+
+                task_title = task.get("title", "")
+                assigned_to = task.get("assigned_to", "")
+                assigned_name = task.get("assigned_to_name", "")
+                due_date = task.get("due_date", "")
+                numero_exp = task.get("numero_expediente", "")
+                priority = task.get("priority", "media")
+
+                # Build recipients list
+                recipients = []
+
+                # 1. Assigned user
+                if assigned_to:
+                    assigned_user = await db.users.find_one({"_id": ObjectId(assigned_to)})
+                    if assigned_user and assigned_user.get("email"):
+                        recipients.append({"email": assigned_user["email"], "name": assigned_user.get("name", ""), "user_id": assigned_to})
+
+                # 2. All admins
+                async for admin in db.users.find({"role": "admin", "is_hidden": {"$ne": True}}):
+                    admin_id = str(admin["_id"])
+                    if not any(r["user_id"] == admin_id for r in recipients):
+                        recipients.append({"email": admin.get("email", ""), "name": admin.get("name", ""), "user_id": admin_id})
+
+                # 3. Fixed extra email
+                if REMINDER_EXTRA_EMAIL:
+                    if not any(r["email"] == REMINDER_EXTRA_EMAIL for r in recipients):
+                        recipients.append({"email": REMINDER_EXTRA_EMAIL, "name": "K. Ortiz", "user_id": None})
+
+                # Create notifications (bell) for users with IDs
+                for r in recipients:
+                    if r["user_id"]:
+                        await db.notifications.insert_one({
+                            "user_id": r["user_id"],
+                            "type": "task_reminder",
+                            "title": f"Recordatorio: tarea vence en {days_before} dia(s)",
+                            "message": f"La tarea '{task_title}' vence el {due_date}",
+                            "task_id": task_id,
+                            "read": False,
+                            "created_at": now.isoformat()
+                        })
+
+                # Send emails
+                priority_colors = {"alta": "#ef4444", "media": "#f59e0b", "baja": "#94a3b8"}
+                color = priority_colors.get(priority, "#94a3b8")
+                exp_line = f"<p><strong>Expediente:</strong> {numero_exp}</p>" if numero_exp else ""
+
+                for r in recipients:
+                    if r["email"]:
+                        html_body = f"""
+                        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                            <h2 style="color: #0f172a;">Recordatorio de tarea</h2>
+                            <p>Hola {r['name']},</p>
+                            <p>La siguiente tarea vence en <strong>{days_before} dia(s)</strong>:</p>
+                            <div style="background: #f8fafc; border-left: 4px solid {color}; padding: 16px; margin: 16px 0; border-radius: 4px;">
+                                <p style="margin: 0 0 8px 0; font-size: 18px; font-weight: bold;">{task_title}</p>
+                                <p style="margin: 0 0 4px 0;">Prioridad: <span style="color: {color}; font-weight: bold;">{priority.upper()}</span></p>
+                                <p style="margin: 0 0 4px 0;">Fecha limite: <strong>{due_date}</strong></p>
+                                <p style="margin: 0 0 4px 0;">Asignado a: <strong>{assigned_name}</strong></p>
+                                {exp_line}
+                            </div>
+                            <p>Accede a la plataforma para ver los detalles: <a href="https://tramilex.goroky.es/admin/tareas">Ver tareas</a></p>
+                        </div>
+                        """
+                        try:
+                            _send_email(r["email"], f"Tramilex - Recordatorio: {task_title} (vence en {days_before} dias)", html_body)
+                        except Exception as e:
+                            logger.error(f"Error enviando recordatorio a {r['email']}: {e}")
+
+                logger.info(f"Recordatorio enviado: tarea '{task_title}' vence en {days_before} dias")
+
+    except Exception as e:
+        logger.error(f"Error en check_task_reminders: {e}")
+
+
+# Initialize scheduler
+reminder_scheduler = AsyncIOScheduler()
+reminder_scheduler.add_job(check_task_reminders, IntervalTrigger(hours=6), id="task_reminders", replace_existing=True)
+
+
+@api_router.post("/tasks/reminders/check-now")
+async def trigger_reminders_check(user=Depends(require_admin)):
+    """Manual trigger for task reminders (admin only, for testing)."""
+    await check_task_reminders()
+    return {"message": "Revision de recordatorios ejecutada"}
+
 
 @api_router.get("/notifications")
 async def get_notifications(user=Depends(require_staff_or_admin)):
@@ -4995,6 +5253,13 @@ async def startup():
         logger.info("Object Storage inicializado")
     except Exception as e:
         logger.error(f"Error inicializando storage: {e}")
+
+    # Start reminder scheduler
+    try:
+        reminder_scheduler.start()
+        logger.info("Scheduler de recordatorios iniciado (cada 6 horas)")
+    except Exception as e:
+        logger.error(f"Error iniciando scheduler: {e}")
 
 
 # Include router

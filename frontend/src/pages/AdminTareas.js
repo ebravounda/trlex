@@ -13,7 +13,8 @@ import {
   Plus, MessageSquare, Trash2, Send, CalendarDays,
   CircleDot, CheckCircle2, Timer, Search, LayoutGrid, List, Clock,
   Paperclip, FileText, Download, Mail, Pencil, X, Upload, Hash,
-  ChevronDown, FolderOpen, MoreHorizontal, GripVertical
+  ChevronDown, FolderOpen, MoreHorizontal, GripVertical,
+  Mic, MicOff, Play, Square, Volume2
 } from 'lucide-react';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 
@@ -68,6 +69,84 @@ function formatSize(bytes) {
   return (bytes / 1048576).toFixed(1) + ' MB';
 }
 
+// ─── Audio Player ───────────────────────────────────────────
+function AudioPlayer({ audio, taskId, onDelete }) {
+  const [playing, setPlaying] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const audioRef = useRef(null);
+
+  const togglePlay = (e) => {
+    e.stopPropagation();
+    if (!audioRef.current) {
+      const token = localStorage.getItem('token');
+      const backendUrl = process.env.REACT_APP_BACKEND_URL;
+      const audioEl = new Audio();
+      // Fetch with auth header
+      fetch(`${backendUrl}/api/tasks/${taskId}/audios/${audio.id}/stream`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+        .then(r => r.blob())
+        .then(blob => {
+          audioEl.src = URL.createObjectURL(blob);
+          audioEl.onended = () => setPlaying(false);
+          audioRef.current = audioEl;
+          audioEl.play();
+          setPlaying(true);
+        })
+        .catch(() => toast.error('Error reproduciendo'));
+      return;
+    }
+    if (playing) {
+      audioRef.current.pause();
+      setPlaying(false);
+    } else {
+      audioRef.current.play();
+      setPlaying(true);
+    }
+  };
+
+  return (
+    <div className="bg-gradient-to-r from-slate-50 to-slate-100 rounded-xl border border-slate-200 p-3 space-y-2" data-testid={`task-audio-${audio.id}`}>
+      <div className="flex items-center gap-3">
+        <button
+          onClick={togglePlay}
+          className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 transition-all ${
+            playing ? 'bg-slate-900 text-white shadow-md' : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-300 hover:shadow-sm'
+          }`}
+          data-testid={`play-audio-${audio.id}`}
+        >
+          {playing ? <Square className="w-3 h-3 fill-white" /> : <Play className="w-3.5 h-3.5 ml-0.5" />}
+        </button>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-medium text-slate-700">{audio.recorded_by_name}</span>
+            <span className="text-[10px] text-slate-400">{timeAgo(audio.created_at)}</span>
+          </div>
+          {audio.transcription && (
+            <button onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+              className="text-[11px] text-blue-500 hover:text-blue-600 mt-0.5 cursor-pointer">
+              {expanded ? 'Ocultar transcripcion' : 'Ver transcripcion'}
+            </button>
+          )}
+        </div>
+        <button
+          onClick={(e) => { e.stopPropagation(); onDelete(audio.id); }}
+          className="p-1 text-slate-300 hover:text-red-500 transition-colors"
+          data-testid={`delete-audio-${audio.id}`}
+        >
+          <Trash2 className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      {audio.transcription && expanded && (
+        <div className="bg-white rounded-lg border border-slate-100 px-3 py-2 mt-1">
+          <p className="text-xs text-slate-600 leading-relaxed italic">"{audio.transcription}"</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ─── Task Card ──────────────────────────────────────────────
 function TaskCard({ task, onOpenDetail, onStatusChange }) {
   const pri = PRIORITIES.find(x => x.value === task.priority) || PRIORITIES[1];
@@ -90,6 +169,11 @@ function TaskCard({ task, onOpenDetail, onStatusChange }) {
             {task.documents_count > 0 && (
               <span className="flex items-center gap-0.5 text-[11px] text-slate-400" data-testid={`task-docs-count-${task.id}`}>
                 <Paperclip className="w-3 h-3" /> {task.documents_count}
+              </span>
+            )}
+            {task.audios_count > 0 && (
+              <span className="flex items-center gap-0.5 text-[11px] text-slate-400">
+                <Mic className="w-3 h-3" /> {task.audios_count}
               </span>
             )}
             {task.comments_count > 0 && (
@@ -145,6 +229,14 @@ function TaskDetailDialog({ task, open, onClose, staff, user, onRefresh }) {
   const [editForm, setEditForm] = useState({});
   const [dragOver, setDragOver] = useState(false);
   const fileInputRef = useRef(null);
+
+  // Audio recording state
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
+  const [audioUploading, setAudioUploading] = useState(false);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordingTimerRef = useRef(null);
 
   const fetchDetail = useCallback(async () => {
     if (!task?.id) return;
@@ -282,6 +374,72 @@ function TaskDetailDialog({ task, open, onClose, staff, user, onRefresh }) {
       toast.error(err.response?.data?.detail || 'Error enviando');
     }
     setSending(false);
+  };
+
+  // ── Audio Recording ──
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        stream.getTracks().forEach(t => t.stop());
+        clearInterval(recordingTimerRef.current);
+        setRecordingTime(0);
+        const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        if (blob.size > 0) {
+          setAudioUploading(true);
+          try {
+            const formData = new FormData();
+            formData.append('file', blob, `audio_${Date.now()}.webm`);
+            const res = await api.post(`/tasks/${task.id}/audio/upload`, formData, {
+              headers: { 'Content-Type': 'multipart/form-data' },
+            });
+            toast.success(res.data.transcription ? 'Audio grabado y transcrito' : 'Audio grabado');
+            fetchDetail();
+            onRefresh();
+          } catch (err) {
+            toast.error(err.response?.data?.detail || 'Error subiendo audio');
+          }
+          setAudioUploading(false);
+        }
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      recordingTimerRef.current = setInterval(() => setRecordingTime(t => t + 1), 1000);
+    } catch (err) {
+      toast.error('No se pudo acceder al microfono');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const handleDeleteAudio = async (audioId) => {
+    try {
+      await api.delete(`/tasks/${task.id}/audios/${audioId}`);
+      toast.success('Audio eliminado');
+      fetchDetail();
+      onRefresh();
+    } catch { toast.error('Error'); }
+  };
+
+  const formatRecordingTime = (seconds) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
   const pri = PRIORITIES.find(x => x.value === (detail?.priority || task?.priority)) || PRIORITIES[1];
@@ -560,6 +718,60 @@ function TaskDetailDialog({ task, open, onClose, staff, user, onRefresh }) {
                 )}
               </div>
 
+              {/* ── Audio Section ── */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2">
+                    <Volume2 className="w-4 h-4 text-slate-400" />
+                    Notas de voz
+                    {detail.audios?.length > 0 && (
+                      <span className="text-[10px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-full font-bold">{detail.audios.length}</span>
+                    )}
+                  </h3>
+                </div>
+
+                {/* Recorder */}
+                <div className="flex items-center gap-3 mb-3">
+                  {!isRecording ? (
+                    <Button
+                      variant="outline" size="sm"
+                      className="h-9 gap-2 border-slate-200 hover:border-red-300 hover:bg-red-50 hover:text-red-600 transition-all"
+                      onClick={startRecording}
+                      disabled={audioUploading}
+                      data-testid="start-recording-btn"
+                    >
+                      <Mic className="w-4 h-4" />
+                      {audioUploading ? 'Subiendo...' : 'Grabar audio'}
+                    </Button>
+                  ) : (
+                    <div className="flex items-center gap-3">
+                      <Button
+                        size="sm"
+                        className="h-9 gap-2 bg-red-500 hover:bg-red-600 text-white animate-pulse"
+                        onClick={stopRecording}
+                        data-testid="stop-recording-btn"
+                      >
+                        <Square className="w-3 h-3 fill-white" />
+                        Detener
+                      </Button>
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                        <span className="text-sm font-mono text-red-600 font-medium">{formatRecordingTime(recordingTime)}</span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Audio list */}
+                {detail.audios?.length > 0 && (
+                  <div className="space-y-2">
+                    {detail.audios.map(audio => (
+                      <AudioPlayer key={audio.id} audio={audio} taskId={task.id} onDelete={handleDeleteAudio} />
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {/* ── Comments Section ── */}
               <div>
                 <h3 className="text-sm font-semibold text-slate-700 flex items-center gap-2 mb-3">
@@ -716,12 +928,27 @@ export default function AdminTareas() {
   const [filterPriority, setFilterPriority] = useState('all');
 
   const fetchTasks = useCallback(async () => {
-    try { const res = await api.get('/tasks'); setTasks(res.data); } catch { toast.error('Error cargando tareas'); }
+    try { const res = await api.get('/tasks'); setTasks(res.data); return res.data; } catch { toast.error('Error cargando tareas'); return []; }
   }, []);
   const fetchStaff = useCallback(async () => {
     try { const res = await api.get('/staff'); setStaff(res.data); } catch {}
   }, []);
-  useEffect(() => { fetchTasks(); fetchStaff(); }, [fetchTasks, fetchStaff]);
+  useEffect(() => {
+    const init = async () => {
+      const allTasks = await fetchTasks();
+      await fetchStaff();
+      // Check if URL has ?task=id parameter (from notification click)
+      const params = new URLSearchParams(window.location.search);
+      const taskId = params.get('task');
+      if (taskId && allTasks.length > 0) {
+        const found = allTasks.find(t => t.id === taskId);
+        if (found) setSelectedTask(found);
+        // Clean up URL
+        window.history.replaceState({}, '', window.location.pathname);
+      }
+    };
+    init();
+  }, [fetchTasks, fetchStaff]);
 
   const filtered = tasks.filter(t => {
     if (search.trim() && !(
@@ -895,6 +1122,11 @@ export default function AdminTareas() {
                   {task.documents_count > 0 && (
                     <span className="flex items-center gap-0.5 text-[11px] text-slate-400">
                       <Paperclip className="w-3 h-3" /> {task.documents_count}
+                    </span>
+                  )}
+                  {task.audios_count > 0 && (
+                    <span className="flex items-center gap-0.5 text-[11px] text-slate-400">
+                      <Mic className="w-3 h-3" /> {task.audios_count}
                     </span>
                   )}
                   {task.comments_count > 0 && (
