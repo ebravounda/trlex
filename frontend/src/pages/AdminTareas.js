@@ -74,6 +74,7 @@ function AudioPlayer({ audio, taskId, onDelete }) {
   const [playing, setPlaying] = useState(false);
   const [expanded, setExpanded] = useState(false);
   const audioRef = useRef(null);
+  const blobUrlRef = useRef(null);
 
   const togglePlay = (e) => {
     e.stopPropagation();
@@ -81,13 +82,15 @@ function AudioPlayer({ audio, taskId, onDelete }) {
       const token = localStorage.getItem('token');
       const backendUrl = process.env.REACT_APP_BACKEND_URL;
       const audioEl = new Audio();
-      // Fetch with auth header
       fetch(`${backendUrl}/api/tasks/${taskId}/audios/${audio.id}/stream`, {
         headers: { 'Authorization': `Bearer ${token}` }
       })
         .then(r => r.blob())
         .then(blob => {
-          audioEl.src = URL.createObjectURL(blob);
+          if (blobUrlRef.current) URL.revokeObjectURL(blobUrlRef.current);
+          const url = URL.createObjectURL(blob);
+          blobUrlRef.current = url;
+          audioEl.src = url;
           audioEl.onended = () => setPlaying(false);
           audioRef.current = audioEl;
           audioEl.play();

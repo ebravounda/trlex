@@ -3885,12 +3885,13 @@ async def upload_task_audio(
                 tmp.write(content)
                 tmp.flush()
                 tmp.seek(0)
-                result = openai_client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=open(tmp.name, "rb"),
-                    language="es",
-                    response_format="text"
-                )
+                with open(tmp.name, "rb") as audio_fh:
+                    result = openai_client.audio.transcriptions.create(
+                        model="whisper-1",
+                        file=audio_fh,
+                        language="es",
+                        response_format="text"
+                    )
                 transcription = result.strip() if isinstance(result, str) else str(result).strip()
         except Exception as e:
             logger.error(f"Error transcribiendo audio: {e}")

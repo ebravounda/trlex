@@ -1,0 +1,68 @@
+{
+  "summary": "Iteration 13 validated Tareas NEW features: audio recording/transcription (upload/list/stream/delete), audios array/audios_count in task responses, task reminders scheduler + manual trigger with notification+dedup, and NotificationBell -> /admin/tareas?task={id} auto-open flow. Backend: 10 passed / 1 skipped / 0 failed via pytest (test_tareas_iter13.py). Frontend Playwright: admin login, /admin/tareas loads, task-detail-dialog opens, 'Notas de voz' section with start-recording-btn ('Grabar audio') visible, ?task={id} auto-opens task detail dialog, notification-bell present. Audio upload verified with real WAV bytes -> stored in Object Storage, Whisper endpoint invoked (transcription returned empty for synthetic tone, expected), stream returned raw bytes matching upload size + RIFF magic bytes, delete removes audio and re-delete returns 404. Reminder system: creating a task with due_date=today+1d then POST /api/tasks/reminders/check-now creates a task_reminder notification (title contains 'vence en 1 dia(s)') for admin; second trigger did NOT duplicate (dedup via task_reminders collection works). Admin-only guard for /reminders/check-now not fully verified via staff account: staff login requires PIN in this env (see below).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/auth/login (staff eduardo.test@tramilex.es)", "issue": "Returns 'Use PIN para acceder' instead of accepting email+password from /app/memory/test_credentials.md (NuevaClave123!). Blocks negative-auth test for admin-only endpoints. Confirm PIN flow is intended for this staff user; if so, update test_credentials.md with the PIN or an alternate staff test account."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "TaskDetailDialog", "issues": ["Radix DialogContent still missing DialogDescription/aria-describedby -> repeated console warning 'Missing Description or aria-describedby={undefined} for {DialogContent}'. Non-blocking a11y warning carried over from iter12."]}
+    ]
+  },
+  "passed_tests": [
+    "POST /api/tasks/{id}/audio/upload accepts multipart audio (WAV, real bytes), returns id/size/transcription/message",
+    "POST /api/tasks/{id}/audio/upload with invalid task id -> 404",
+    "GET /api/tasks/{id}/audios lists uploaded audios with id/transcription/size/recorded_by_name/created_at",
+    "GET /api/tasks/{id}/audios/{aid}/stream returns audio/* bytes matching original (RIFF header preserved)",
+    "GET /api/tasks/{id}/audios/{aid}/stream without auth -> 401/403",
+    "DELETE /api/tasks/{id}/audios/{aid} removes audio and second call returns 404",
+    "GET /api/tasks/{id} response includes 'audios' array",
+    "GET /api/tasks response includes 'audios_count' per task",
+    "POST /api/tasks/reminders/check-now (admin) -> 200",
+    "check_task_reminders creates task_reminder notification for admin with correct task_id + 'vence' message; dedup prevents duplicates on 2nd trigger",
+    "Frontend: /admin/tareas loads (admin-tareas testid)",
+    "Frontend: task-card click opens task-detail-dialog",
+    "Frontend: 'Notas de voz' section + start-recording-btn ('Grabar audio') present",
+    "Frontend: URL ?task={id} auto-opens task-detail-dialog",
+    "Frontend: notification-bell element present"
+  ],
+  "skipped_tests": [
+    "Backend: /tasks/reminders/check-now admin-only 401/403 for staff (skipped: staff login requires PIN in this env)",
+    "Frontend: MediaRecorder actual recording (headless: no mic; per test brief, backend upload path is the substitute)",
+    "Frontend: Real task_reminder notification click -> navigate (no seeded task_reminder notification interactive click executed; NotificationBell.handleNotificationClick code path visually inspected: navigates to /admin/tareas?task={id} for task_assigned/task_reassigned/task_comment/task_reminder types, and ?task= auto-open confirmed working end-to-end)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/test_tareas_iter13.py",
+    "/app/test_reports/pytest/iter13.xml"
+  ],
+  "action_items": [
+    "(Minor) Update /app/memory/test_credentials.md with a working staff email/password (or PIN) so negative auth tests can run.",
+    "(A11y, minor, carryover) Add DialogTitle/DialogDescription (or VisuallyHidden) to TaskDetailDialog to silence Radix warnings.",
+    "(Robustness) In backend server.py upload_task_audio, temp file uses NamedTemporaryFile(delete=True) and opens it a second time via open(tmp.name, 'rb') without closing the OpenAI file handle -> file descriptor leak per upload; wrap the openai call file in a with-open block.",
+    "(Robustness) check_task_reminders inserts into task_reminders BEFORE actually sending email; if email later fails the dedup record still exists and no retry occurs. Consider marking sent_at only after successful email send, or storing per-recipient status.",
+    "(Consistency) POST /api/tasks/{id}/audio/upload always sets language='es' for Whisper; consider making language optional/detected."
+  ],
+  "critical_code_review_comments": [
+    "server.py upload_task_audio: open(tmp.name, 'rb') is not closed after openai_client.audio.transcriptions.create; file descriptor leak. Use `with open(tmp.name, 'rb') as fh: openai_client.audio.transcriptions.create(file=fh, ...)`.",
+    "server.py check_task_reminders: dedup record (task_reminders insert) happens before email send loop, so partial-failure => no retry. Consider persisting per-recipient delivery status.",
+    "server.py stream_task_audio: Content-Disposition builds extension from split('/')[-1] of content_type (e.g. 'webm' from 'audio/webm') — fine, but for 'audio/mpeg' this yields 'mpeg' rather than 'mp3'; minor cosmetic.",
+    "server.py list_tasks: audios_count computed via count_documents per task inside async for loop -> N+1 query pattern; on large lists this is slow. Consider $lookup aggregation or a maintained counter on task doc.",
+    "AdminTareas.js is now ~1160 lines and hosts AudioPlayer + TaskCard + TaskDetailDialog + TaskFormDialog + main page — exceeds the 700-line guideline; recommended split into /pages/tareas/* modules (carryover from iter12).",
+    "AudioPlayer creates a Blob URL (URL.createObjectURL) via fetch on play, but never revokes it (URL.revokeObjectURL); memory leak on repeated plays across many tasks.",
+    "check_task_reminders sends emails synchronously inside the async endpoint /tasks/reminders/check-now; on large task volumes this can time out the HTTP call. Move email fan-out to background task."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_tareas_iter13.py (new)"
+  ],
+  "success_rate": {"backend": "100% (10/10 executed, 1 skipped due to env)", "frontend": "100% for UI elements checked"},
+  "test_credentials": {"admin": "malcafuz@tramilex.es / Admin123!", "note": "eduardo.test staff login returns 'Use PIN para acceder' - update /app/memory/test_credentials.md"},
+  "seed_data_creation": "Ephemeral: created TEST_iter13_audio_task and TEST_iter13_reminder_* tasks; uploaded synthetic WAV audios; created task_reminder notifications + task_reminders dedup records. Tasks were deleted at teardown; residual task_reminders/notification docs remain in DB (do not affect other tests due to unique reminder_key including task_id).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "iter13 audio + reminders + notification navigation all pass. Key facts: (1) auth login returns 'token' (not 'access_token'); staff eduardo.test requires PIN in this env. (2) Task create REQUIRES assigned_to (Pydantic 422 otherwise). (3) Reminder endpoint POST /api/tasks/reminders/check-now (admin only); dedup via db.task_reminders collection keyed by '{task_id}_{days_before}d'; REMINDER_DAYS=[5,3,2,1]; also emails kortiz@tramilex.es. (4) Task detail response has 'audios' array; list has 'audios_count'. (5) Frontend: start-recording-btn, stop-recording-btn, play-audio-{id}, delete-audio-{id}, task-audio-{id} testids in place. NotificationBell navigates to /admin/tareas?task={id} for types task_assigned/task_reassigned/task_comment/task_reminder; AdminTareas parses ?task= param on mount and opens task-detail-dialog (verified in browser).",
+  "rca of the issue": "No blocking bugs found. All new endpoints and UI hooks behave per spec."
+}
