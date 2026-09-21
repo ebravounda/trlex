@@ -14,7 +14,7 @@ import {
   CircleDot, CheckCircle2, Timer, Search, LayoutGrid, List, Clock,
   Paperclip, FileText, Download, Mail, Pencil, X, Upload, Hash,
   ChevronDown, FolderOpen, MoreHorizontal, GripVertical,
-  Mic, MicOff, Play, Square, Volume2
+  Mic, MicOff, Play, Square, Volume2, AlertTriangle
 } from 'lucide-react';
 import * as VisuallyHidden from '@radix-ui/react-visually-hidden';
 
@@ -162,7 +162,7 @@ function TaskCard({ task, onOpenDetail, onStatusChange }) {
 
   return (
     <div
-      className={`group bg-white rounded-xl border transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 cursor-pointer ${isDone ? 'opacity-70' : 'border-slate-200/80'}`}
+      className={`group bg-white rounded-xl border transition-all duration-200 hover:shadow-lg hover:-translate-y-0.5 cursor-pointer ${isDone ? 'opacity-70 border-slate-200/80' : isOverdue ? 'border-red-300 ring-1 ring-red-100 bg-red-50/30' : 'border-slate-200/80'}`}
       onClick={() => onOpenDetail(task)}
       data-testid={`task-card-${task.id}`}
     >
@@ -214,8 +214,9 @@ function TaskCard({ task, onOpenDetail, onStatusChange }) {
           </div>
           {task.due_date && (
             <span className={`flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded-md ${
-              isOverdue ? 'bg-red-50 text-red-600 ring-1 ring-red-200/50' : 'bg-slate-50 text-slate-500'
+              isOverdue ? 'bg-red-100 text-red-600 ring-1 ring-red-200/50 font-bold' : 'bg-slate-50 text-slate-500'
             }`}>
+              {isOverdue && <AlertTriangle className="w-3 h-3" />}
               <CalendarDays className="w-3 h-3" /> {formatDate(task.due_date)}
             </span>
           )}
@@ -981,6 +982,8 @@ export default function AdminTareas() {
   const total = tasks.length;
   const doneCount = tasks.filter(t => t.status === 'completada').length;
   const progress = total > 0 ? Math.round((doneCount / total) * 100) : 0;
+  const overdueTasks = tasks.filter(t => t.due_date && new Date(t.due_date) < new Date(new Date().toDateString()) && t.status !== 'completada');
+  const [overdueOpen, setOverdueOpen] = useState(true);
 
   return (
     <div className="space-y-6" data-testid="admin-tareas">
@@ -1012,6 +1015,52 @@ export default function AdminTareas() {
         </div>
       </div>
 
+      {/* Overdue Alert */}
+      {overdueTasks.length > 0 && overdueOpen && (
+        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 shadow-sm animate-in fade-in slide-in-from-top-2 duration-300" data-testid="overdue-alert">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-xl bg-red-100 flex items-center justify-center shrink-0">
+              <AlertTriangle className="w-5 h-5 text-red-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-sm font-bold text-red-800">
+                  {overdueTasks.length} tarea{overdueTasks.length > 1 ? 's' : ''} vencida{overdueTasks.length > 1 ? 's' : ''}
+                </h3>
+                <button onClick={() => setOverdueOpen(false)} className="text-red-300 hover:text-red-500 transition-colors">
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="space-y-1.5">
+                {overdueTasks.map(t => {
+                  const pri = PRIORITIES.find(p => p.value === t.priority) || PRIORITIES[1];
+                  const daysOverdue = Math.floor((new Date(new Date().toDateString()) - new Date(t.due_date)) / 86400000);
+                  return (
+                    <div key={t.id}
+                      className="flex items-center gap-3 bg-white/70 rounded-lg px-3 py-2 cursor-pointer hover:bg-white transition-colors border border-red-100"
+                      onClick={() => setSelectedTask(t)}
+                      data-testid={`overdue-task-${t.id}`}
+                    >
+                      <div className={`w-2 h-2 rounded-full ${pri.dot} shrink-0`} />
+                      <span className="text-xs font-semibold text-red-900 truncate flex-1">{t.title}</span>
+                      {t.numero_expediente && (
+                        <span className="text-[10px] font-mono text-red-400 hidden sm:inline">#{t.numero_expediente}</span>
+                      )}
+                      <div className={`w-5 h-5 rounded-full ${avatarColor(t.assigned_to_name)} flex items-center justify-center shrink-0`}>
+                        <span className="text-[7px] font-bold text-white">{getInitials(t.assigned_to_name)}</span>
+                      </div>
+                      <span className="text-[10px] font-bold text-red-600 bg-red-100 px-1.5 py-0.5 rounded shrink-0">
+                        {daysOverdue === 0 ? 'Hoy' : daysOverdue === 1 ? 'Ayer' : `Hace ${daysOverdue}d`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Stats bar */}
       <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm">
         <div className="flex items-center justify-between mb-3">
@@ -1033,9 +1082,17 @@ export default function AdminTareas() {
               );
             })}
           </div>
-          <div className="text-right">
-            <p className="text-2xl font-bold text-emerald-600">{progress}%</p>
-            <p className="text-[10px] uppercase tracking-wider text-slate-400">Progreso</p>
+          <div className="text-right flex items-center gap-5">
+            {overdueTasks.length > 0 && (
+              <div className="text-right">
+                <p className="text-2xl font-bold text-red-500">{overdueTasks.length}</p>
+                <p className="text-[10px] uppercase tracking-wider text-red-400 font-semibold">Vencidas</p>
+              </div>
+            )}
+            <div className="text-right">
+              <p className="text-2xl font-bold text-emerald-600">{progress}%</p>
+              <p className="text-[10px] uppercase tracking-wider text-slate-400">Progreso</p>
+            </div>
           </div>
         </div>
         <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
