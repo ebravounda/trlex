@@ -4165,10 +4165,13 @@ def create_shared_mailbox_exchange(email, display_name):
     import requests as req
     token = get_exchange_token()
     if not token:
-        return False, "No se pudo obtener token de Exchange Online"
+        return False, "No se pudo obtener token de Exchange Online. Verifica las credenciales de Microsoft en Configuracion."
 
     tenant_id = os.environ.get("MS_TENANT_ID", "")
     admin_email = os.environ.get("MS_EMAIL", "")
+    if not tenant_id or not admin_email:
+        return False, "Faltan MS_TENANT_ID o MS_EMAIL en la configuracion del servidor"
+
     alias = email.split("@")[0]
 
     url = f"https://outlook.office365.com/adminapi/beta/{tenant_id}/InvokeCommand"
@@ -4192,24 +4195,39 @@ def create_shared_mailbox_exchange(email, display_name):
 
     try:
         r = req.post(url, json=payload, headers=headers, timeout=30)
-        logger.info(f"Exchange InvokeCommand response: {r.status_code} {r.text[:500]}")
+        logger.info(f"Exchange InvokeCommand [{r.status_code}]: {r.text[:500]}")
+
         if r.status_code in [200, 201]:
-            resp_data = r.json()
-            # Check for errors in the response
-            if resp_data.get("error"):
-                return False, resp_data["error"].get("message", str(resp_data["error"]))[:300]
+            try:
+                resp_data = r.json()
+                # Check for cmdlet-level errors in response
+                if resp_data.get("error"):
+                    err_msg = resp_data["error"].get("message", str(resp_data["error"]))
+                    return False, err_msg[:300]
+                # Check for @adminapi.executionErrors
+                exec_errors = resp_data.get("@adminapi.executionErrors", [])
+                if exec_errors:
+                    return False, str(exec_errors[0])[:300]
+            except Exception:
+                pass
             return True, ""
+        elif r.status_code == 401 or r.status_code == 403:
+            return False, "Permisos insuficientes. Asegurate de que la app tenga Exchange.ManageAsApp y rol Exchange Administrator en Azure AD."
         else:
-            error_text = r.text[:300]
+            error_text = f"HTTP {r.status_code}"
             try:
                 error_json = r.json()
                 if error_json.get("error"):
                     error_text = error_json["error"].get("message", error_text)
             except Exception:
-                pass
+                error_text = r.text[:300] if r.text else error_text
             return False, error_text
+    except req.exceptions.Timeout:
+        return False, "Tiempo de espera agotado al conectar con Exchange Online"
+    except req.exceptions.ConnectionError:
+        return False, "No se pudo conectar con Exchange Online"
     except Exception as e:
-        return False, str(e)[:200]
+        return False, f"Error inesperado: {str(e)[:200]}"
 
 
 @api_router.post("/client-mailboxes")
@@ -4251,8 +4269,10 @@ async def create_client_mailbox(body: dict = Body(...), user=Depends(require_sta
         logger.info(f"Shared mailbox created in Office 365: {full_email}")
     else:
         ms_status = "error"
-        ms_error = error
-        logger.warning(f"Could not create mailbox {full_email}: {error}")
+        ms_error = error or "Error desconocido al conectar con Exchange Online"
+        logger.warning(f"Could not create mailbox {full_email}: {ms_error}")
+        # Don't save failed attempts - let user retry
+        raise HTTPException(status_code=400, detail=ms_error)
 
     # Save in our DB
     doc = {
@@ -4274,9 +4294,6 @@ async def create_client_mailbox(body: dict = Body(...), user=Depends(require_sta
         client = await db.users.find_one({"_id": ObjectId(client_id), "role": "client"})
         if client:
             client_name = client.get("name", "")
-
-    if not success:
-        raise HTTPException(status_code=400, detail=f"Error creando buzon en Office 365: {ms_error}")
 
     return {
         "id": str(result.inserted_id),
