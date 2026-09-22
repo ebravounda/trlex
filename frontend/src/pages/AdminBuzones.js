@@ -69,60 +69,15 @@ function CreateMailboxDialog({ open, onClose, clients, onCreated }) {
 
         {result ? (
           <div className="space-y-4 mt-2">
-            {result.ms_status === 'created' ? (
-              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                  <p className="text-sm font-semibold text-emerald-800">Buzon creado automaticamente</p>
-                </div>
-                <p className="text-xs text-emerald-600">{result.email} ya esta listo para recibir correos.</p>
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-2">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+                <p className="text-sm font-semibold text-emerald-800">Buzon creado exitosamente</p>
               </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertCircle className="w-5 h-5 text-amber-600" />
-                    <p className="text-sm font-semibold text-amber-800">Crear buzon en Office 365</p>
-                  </div>
-                  <p className="text-xs text-amber-700 mb-3">
-                    El buzon <strong>{result.email}</strong> se registro en Tramilex pero necesitas crearlo en Office 365:
-                  </p>
-                </div>
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2.5">
-                  <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">Pasos:</p>
-                  <div className="space-y-2">
-                    <div className="flex gap-2">
-                      <span className="w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">1</span>
-                      <p className="text-xs text-slate-600">Abre el <strong>Admin Center de Microsoft 365</strong></p>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">2</span>
-                      <p className="text-xs text-slate-600">Ve a <strong>Equipos y Grupos → Buzones compartidos</strong></p>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">3</span>
-                      <p className="text-xs text-slate-600">Click en <strong>"Agregar un buzon compartido"</strong></p>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">4</span>
-                      <div className="text-xs text-slate-600">
-                        <p>Nombre: <strong>{result.display_name}</strong></p>
-                        <p>Email: <strong className="font-mono text-blue-600">{result.email}</strong></p>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center shrink-0">5</span>
-                      <p className="text-xs text-slate-600">Guarda. El buzon estara activo en minutos.</p>
-                    </div>
-                  </div>
-                </div>
-                <a href="https://admin.microsoft.com/#/SharedMailboxList" target="_blank" rel="noopener noreferrer"
-                  className="flex items-center justify-center gap-2 w-full h-10 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-medium transition-colors">
-                  <ExternalLink className="w-4 h-4" /> Abrir Admin Center de Microsoft 365
-                </a>
-              </div>
-            )}
-            <Button onClick={handleClose} variant="outline" className="w-full h-10 rounded-xl">
+              <p className="text-xs text-emerald-600 font-mono">{result.email}</p>
+              <p className="text-xs text-emerald-600 mt-1">El buzon ya esta activo y listo para recibir correos.</p>
+            </div>
+            <Button onClick={handleClose} className="w-full h-10 rounded-xl bg-slate-900 hover:bg-slate-800">
               Cerrar
             </Button>
           </div>
@@ -460,11 +415,7 @@ export default function AdminBuzones() {
                   {mb.ms_status === 'created' ? (
                     <Badge className="text-[9px] bg-emerald-50 text-emerald-600 border-0">Activo</Badge>
                   ) : (
-                    <a href="https://admin.microsoft.com/#/SharedMailboxList" target="_blank" rel="noopener noreferrer"
-                      onClick={e => e.stopPropagation()}
-                      className="text-[9px] bg-amber-50 text-amber-600 border border-amber-200 px-2 py-0.5 rounded-full font-semibold hover:bg-amber-100 transition-colors flex items-center gap-1">
-                      <ExternalLink className="w-2.5 h-2.5" /> Crear en O365
-                    </a>
+                    <Badge className="text-[9px] bg-red-50 text-red-600 border-0">Error</Badge>
                   )}
                   <button
                     onClick={e => { e.stopPropagation(); handleDelete(mb.id, mb.email); }}

@@ -19,6 +19,7 @@ from datetime import datetime, timezone, timedelta
 from pydantic import BaseModel
 from typing import Optional, List
 import smtplib
+import asyncio
 import random
 import string
 import zipfile
@@ -4133,9 +4134,87 @@ async def mark_all_notifications_read(user=Depends(require_staff_or_admin)):
 MAILBOX_DOMAIN = "clientes.tramilex.es"
 
 
+def get_exchange_token():
+    """Get OAuth token for Exchange Online Admin API."""
+    import requests as req
+    try:
+        client_id = os.environ.get("MS_CLIENT_ID", "")
+        tenant_id = os.environ.get("MS_TENANT_ID", "")
+        client_secret = os.environ.get("MS_CLIENT_SECRET", "")
+        if not client_id or not tenant_id or not client_secret:
+            return None
+        url = f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/token"
+        data = {
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "scope": "https://outlook.office365.com/.default",
+            "grant_type": "client_credentials",
+        }
+        r = req.post(url, data=data, timeout=10)
+        if r.status_code == 200:
+            return r.json().get("access_token")
+        logger.error(f"Exchange token error: {r.status_code} {r.text[:200]}")
+        return None
+    except Exception as e:
+        logger.error(f"Exchange token error: {e}")
+        return None
+
+
+def create_shared_mailbox_exchange(email, display_name):
+    """Create a shared mailbox using Exchange Online Admin API (InvokeCommand)."""
+    import requests as req
+    token = get_exchange_token()
+    if not token:
+        return False, "No se pudo obtener token de Exchange Online"
+
+    tenant_id = os.environ.get("MS_TENANT_ID", "")
+    admin_email = os.environ.get("MS_EMAIL", "")
+    alias = email.split("@")[0]
+
+    url = f"https://outlook.office365.com/adminapi/beta/{tenant_id}/InvokeCommand"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Content-Type": "application/json; charset=utf-8",
+        "X-AnchorMailbox": f"UPN:{admin_email}",
+    }
+    payload = {
+        "CmdletInput": {
+            "CmdletName": "New-Mailbox",
+            "Parameters": {
+                "Name": display_name,
+                "DisplayName": display_name,
+                "Alias": alias,
+                "Shared": True,
+                "PrimarySmtpAddress": email,
+            }
+        }
+    }
+
+    try:
+        r = req.post(url, json=payload, headers=headers, timeout=30)
+        logger.info(f"Exchange InvokeCommand response: {r.status_code} {r.text[:500]}")
+        if r.status_code in [200, 201]:
+            resp_data = r.json()
+            # Check for errors in the response
+            if resp_data.get("error"):
+                return False, resp_data["error"].get("message", str(resp_data["error"]))[:300]
+            return True, ""
+        else:
+            error_text = r.text[:300]
+            try:
+                error_json = r.json()
+                if error_json.get("error"):
+                    error_text = error_json["error"].get("message", error_text)
+            except Exception:
+                pass
+            return False, error_text
+    except Exception as e:
+        return False, str(e)[:200]
+
+
 @api_router.post("/client-mailboxes")
 async def create_client_mailbox(body: dict = Body(...), user=Depends(require_admin)):
-    """Register a client mailbox. Attempts to create shared mailbox in Office 365."""
+    """Register a client mailbox. Creates shared mailbox in Office 365 via Exchange Admin API."""
     email_prefix = body.get("email_prefix", "").strip().lower()
     client_id = body.get("client_id", "")
     display_name = body.get("display_name", "")
@@ -4156,42 +4235,20 @@ async def create_client_mailbox(body: dict = Body(...), user=Depends(require_adm
     if existing:
         raise HTTPException(status_code=400, detail=f"El buzon {full_email} ya existe")
 
-    # Try to create shared mailbox in Office 365 via Graph API
+    # Create shared mailbox via Exchange Online Admin API
     ms_status = "pending"
     ms_error = ""
-    token = get_ms_graph_token()
-    if token:
-        try:
-            import requests as req
-            # Create user with mailbox
-            create_url = "https://graph.microsoft.com/v1.0/users"
-            password = uuid.uuid4().hex[:16] + "A1!"
-            payload = {
-                "accountEnabled": False,
-                "displayName": display_name,
-                "mailNickname": email_prefix,
-                "userPrincipalName": full_email,
-                "passwordProfile": {
-                    "forceChangePasswordNextSignIn": False,
-                    "password": password
-                },
-                "usageLocation": "ES"
-            }
-            r = req.post(create_url, json=payload, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, timeout=15)
-            if r.status_code in [200, 201]:
-                ms_status = "created"
-                logger.info(f"Shared mailbox created in Office 365: {full_email}")
-            else:
-                ms_status = "manual_required"
-                ms_error = r.text[:300]
-                logger.warning(f"Could not auto-create mailbox {full_email}: {r.status_code} {ms_error}")
-        except Exception as e:
-            ms_status = "manual_required"
-            ms_error = str(e)[:200]
-            logger.error(f"Error creating mailbox {full_email}: {e}")
+
+    loop = asyncio.get_event_loop()
+    success, error = await loop.run_in_executor(None, create_shared_mailbox_exchange, full_email, display_name)
+
+    if success:
+        ms_status = "created"
+        logger.info(f"Shared mailbox created in Office 365: {full_email}")
     else:
-        ms_status = "manual_required"
-        ms_error = "No se pudo obtener token de Microsoft Graph"
+        ms_status = "error"
+        ms_error = error
+        logger.warning(f"Could not create mailbox {full_email}: {error}")
 
     # Save in our DB
     doc = {
@@ -4214,14 +4271,16 @@ async def create_client_mailbox(body: dict = Body(...), user=Depends(require_adm
         if client:
             client_name = client.get("name", "")
 
+    if not success:
+        raise HTTPException(status_code=400, detail=f"Error creando buzon en Office 365: {ms_error}")
+
     return {
         "id": str(result.inserted_id),
         "email": full_email,
         "display_name": display_name,
         "client_name": client_name,
         "ms_status": ms_status,
-        "ms_error": ms_error,
-        "message": f"Buzon {full_email} registrado" + (" (creado en Office 365)" if ms_status == "created" else " (crear manualmente en Office 365 Admin)")
+        "message": f"Buzon {full_email} creado exitosamente en Office 365"
     }
 
 
