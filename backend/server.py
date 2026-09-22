@@ -4230,10 +4230,14 @@ async def create_client_mailbox(body: dict = Body(...), user=Depends(require_sta
 
     full_email = f"{email_prefix}@{MAILBOX_DOMAIN}"
 
-    # Check if already exists in our DB
-    existing = await db.client_mailboxes.find_one({"email": full_email})
+    # Check if already exists in our DB (only block if successfully created)
+    existing = await db.client_mailboxes.find_one({"email": full_email, "is_active": True})
     if existing:
-        raise HTTPException(status_code=400, detail=f"El buzon {full_email} ya existe")
+        if existing.get("ms_status") == "created":
+            raise HTTPException(status_code=400, detail=f"El buzon {full_email} ya existe y esta activo")
+        else:
+            # Previous failed attempt - remove it so we can retry
+            await db.client_mailboxes.delete_one({"_id": existing["_id"]})
 
     # Create shared mailbox via Exchange Online Admin API
     ms_status = "pending"
