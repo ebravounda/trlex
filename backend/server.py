@@ -4308,6 +4308,9 @@ async def create_client_mailbox(body: dict = Body(...), user=Depends(require_sta
 @api_router.get("/client-mailboxes")
 async def list_client_mailboxes(user=Depends(require_staff_or_admin)):
     mailboxes = []
+    token = get_ms_graph_token()
+    import requests as req
+
     async for m in db.client_mailboxes.find({"is_active": True}).sort("created_at", -1):
         client_name = ""
         if m.get("client_id"):
@@ -4318,7 +4321,18 @@ async def list_client_mailboxes(user=Depends(require_staff_or_admin)):
             except Exception:
                 pass
 
-        # Get unread count from Graph API (cached briefly)
+        # Get unread count per mailbox
+        unread_count = 0
+        if token and m.get("ms_status") == "created":
+            try:
+                email = m.get("email", "")
+                url = f"https://graph.microsoft.com/v1.0/users/{email}/mailFolders/inbox?$select=unreadItemCount"
+                r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=8)
+                if r.status_code == 200:
+                    unread_count = r.json().get("unreadItemCount", 0)
+            except Exception:
+                pass
+
         mailboxes.append({
             "id": str(m["_id"]),
             "email": m.get("email", ""),
@@ -4326,6 +4340,7 @@ async def list_client_mailboxes(user=Depends(require_staff_or_admin)):
             "client_id": m.get("client_id", ""),
             "client_name": client_name,
             "ms_status": m.get("ms_status", ""),
+            "unread_count": unread_count,
             "created_at": m.get("created_at", ""),
         })
     return mailboxes

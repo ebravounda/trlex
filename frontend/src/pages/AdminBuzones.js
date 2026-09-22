@@ -403,12 +403,22 @@ export default function AdminBuzones() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map(mb => (
             <div key={mb.id}
-              className="bg-white border border-slate-200/80 rounded-2xl p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer group"
+              className={`relative bg-white rounded-2xl p-5 hover:shadow-lg hover:-translate-y-0.5 transition-all cursor-pointer group ${
+                mb.unread_count > 0 ? 'border-2 border-red-400 ring-2 ring-red-100' : 'border border-slate-200/80'
+              }`}
               onClick={() => setSelectedMailbox(mb)}
               data-testid={`mailbox-card-${mb.id}`}
             >
+              {/* Unread badge */}
+              {mb.unread_count > 0 && (
+                <div className="absolute -top-2.5 -right-2.5 w-7 h-7 bg-red-500 text-white text-xs font-bold rounded-full flex items-center justify-center shadow-lg animate-bounce" data-testid={`mailbox-unread-${mb.id}`}>
+                  {mb.unread_count > 9 ? '9+' : mb.unread_count}
+                </div>
+              )}
               <div className="flex items-start justify-between mb-3">
-                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-sm">
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-sm ${
+                  mb.unread_count > 0 ? 'bg-gradient-to-br from-red-500 to-rose-600' : 'bg-gradient-to-br from-blue-500 to-indigo-600'
+                }`}>
                   <Mail className="w-5 h-5 text-white" />
                 </div>
                 <div className="flex items-center gap-1">
@@ -428,6 +438,12 @@ export default function AdminBuzones() {
               </div>
               <p className="text-sm font-semibold text-slate-900 mb-0.5">{mb.display_name}</p>
               <p className="text-xs text-blue-600 font-mono mb-2">{mb.email}</p>
+              {mb.unread_count > 0 && (
+                <p className="text-xs font-bold text-red-600 mb-2 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  {mb.unread_count} correo{mb.unread_count > 1 ? 's' : ''} sin leer
+                </p>
+              )}
               {mb.client_name && (
                 <div className="flex items-center gap-1.5 text-xs text-slate-500">
                   <User className="w-3 h-3" />
