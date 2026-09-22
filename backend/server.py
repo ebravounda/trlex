@@ -4213,7 +4213,7 @@ def create_shared_mailbox_exchange(email, display_name):
 
 
 @api_router.post("/client-mailboxes")
-async def create_client_mailbox(body: dict = Body(...), user=Depends(require_admin)):
+async def create_client_mailbox(body: dict = Body(...), user=Depends(require_staff_or_admin)):
     """Register a client mailbox. Creates shared mailbox in Office 365 via Exchange Admin API."""
     email_prefix = body.get("email_prefix", "").strip().lower()
     client_id = body.get("client_id", "")
