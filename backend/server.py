@@ -4331,6 +4331,27 @@ async def list_client_mailboxes(user=Depends(require_staff_or_admin)):
     return mailboxes
 
 
+@api_router.get("/client-mailboxes/unread-total")
+async def get_mailboxes_unread_total(user=Depends(require_staff_or_admin)):
+    """Get total unread count across all active client mailboxes."""
+    token = get_ms_graph_token()
+    if not token:
+        return {"count": 0}
+
+    import requests as req
+    total_unread = 0
+    async for mb in db.client_mailboxes.find({"is_active": True, "ms_status": "created"}):
+        email = mb.get("email", "")
+        try:
+            url = f"https://graph.microsoft.com/v1.0/users/{email}/mailFolders/inbox?$select=unreadItemCount"
+            r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=8)
+            if r.status_code == 200:
+                total_unread += r.json().get("unreadItemCount", 0)
+        except Exception:
+            pass
+    return {"count": total_unread}
+
+
 @api_router.get("/client-mailboxes/{mailbox_id}/messages")
 async def get_mailbox_messages(mailbox_id: str, limit: int = 30, user=Depends(require_staff_or_admin)):
     """Read emails from a client mailbox via Microsoft Graph API."""

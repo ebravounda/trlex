@@ -40,7 +40,7 @@ const navItems = [
   { to: '/admin/settings', label: 'Configuracion', icon: Settings, adminOnly: true },
 ];
 
-function SidebarContent({ onClose, inboxUnread, citasCount, chatUnread, userRole }) {
+function SidebarContent({ onClose, inboxUnread, citasCount, chatUnread, buzonesUnread, userRole }) {
   const { logout } = useAuth();
   const navigate = useNavigate();
 
@@ -88,6 +88,9 @@ function SidebarContent({ onClose, inboxUnread, citasCount, chatUnread, userRole
             {to === '/admin/chat' && chatUnread > 0 && (
               <span className="ml-auto w-5 h-5 bg-violet-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse-badge" data-testid="chat-badge">{chatUnread > 9 ? '9+' : chatUnread}</span>
             )}
+            {to === '/admin/buzones' && buzonesUnread > 0 && (
+              <span className="ml-auto w-5 h-5 bg-blue-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center animate-pulse-badge" data-testid="buzones-badge">{buzonesUnread > 9 ? '9+' : buzonesUnread}</span>
+            )}
           </NavLink>
         ))}
       </nav>
@@ -115,6 +118,7 @@ export default function AdminLayout() {
   const [inboxUnread, setInboxUnread] = useState(0);
   const [citasCount, setCitasCount] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
+  const [buzonesUnread, setBuzonesUnread] = useState(0);
   const [showForcePw, setShowForcePw] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const { user } = useAuth();
@@ -143,13 +147,21 @@ export default function AdminLayout() {
     } catch {}
   }, []);
 
+  const checkBuzonesUnread = useCallback(async () => {
+    try {
+      const res = await api.get('/client-mailboxes/unread-total');
+      setBuzonesUnread(res.data.count || 0);
+    } catch {}
+  }, []);
+
   useEffect(() => {
     checkInbox();
     checkCitas();
     checkChatUnread();
-    const interval = setInterval(() => { checkInbox(); checkCitas(); checkChatUnread(); }, 15000);
+    checkBuzonesUnread();
+    const interval = setInterval(() => { checkInbox(); checkCitas(); checkChatUnread(); checkBuzonesUnread(); }, 15000);
     return () => clearInterval(interval);
-  }, [checkInbox, checkCitas, checkChatUnread]);
+  }, [checkInbox, checkCitas, checkChatUnread, checkBuzonesUnread]);
 
   useEffect(() => {
     if (user?.must_change_password) setShowForcePw(true);
@@ -173,7 +185,7 @@ export default function AdminLayout() {
 
       {/* Desktop sidebar */}
       <aside className="hidden md:flex w-64 bg-white border-r border-slate-200 flex-col fixed inset-y-0 left-0 z-30">
-        <SidebarContent inboxUnread={inboxUnread} citasCount={citasCount} chatUnread={chatUnread} userRole={user?.role} />
+        <SidebarContent inboxUnread={inboxUnread} citasCount={citasCount} chatUnread={chatUnread} buzonesUnread={buzonesUnread} userRole={user?.role} />
       </aside>
 
       {/* Mobile overlay */}
@@ -181,7 +193,7 @@ export default function AdminLayout() {
         <div className="fixed inset-0 z-40 md:hidden">
           <div className="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" onClick={() => setSidebarOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-64 bg-white shadow-xl z-50">
-            <SidebarContent onClose={() => setSidebarOpen(false)} inboxUnread={inboxUnread} citasCount={citasCount} chatUnread={chatUnread} userRole={user?.role} />
+            <SidebarContent onClose={() => setSidebarOpen(false)} inboxUnread={inboxUnread} citasCount={citasCount} chatUnread={chatUnread} buzonesUnread={buzonesUnread} userRole={user?.role} />
           </aside>
         </div>
       )}
