@@ -1,7 +1,7 @@
 import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import api from '@/lib/api';
-import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog, Inbox, DollarSign, CalendarCheck, FileSpreadsheet, MessageCircle, FileDown, Monitor, FileCheck, Briefcase } from 'lucide-react';
+import { Users, Settings, LogOut, Menu, X, ClipboardList, FileText, Mail, Building2, ListTodo, UserCog, Inbox, DollarSign, CalendarCheck, FileSpreadsheet, MessageCircle, FileDown, Monitor, FileCheck, Briefcase, MailPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useState, useEffect, useCallback } from 'react';
 
@@ -31,6 +31,7 @@ const navItems = [
   { to: '/admin/tramites', label: 'Tramites', icon: FileText },
   { to: '/admin/equipo', label: 'Equipo', icon: UserCog, adminOnly: true },
   { to: '/admin/inbox', label: 'Notificaciones email', icon: Inbox },
+  { to: '/admin/buzones', label: 'Buzones Clientes', icon: MailPlus },
   { to: '/admin/email', label: 'Enviar correo', icon: Mail },
   { to: '/admin/audit', label: 'Auditoria', icon: ClipboardList },
   { to: '/admin/compresor', label: 'Compresor PDF', icon: FileDown },

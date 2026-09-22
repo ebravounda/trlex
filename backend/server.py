@@ -4127,6 +4127,303 @@ async def mark_all_notifications_read(user=Depends(require_staff_or_admin)):
 
 
 # ============================
+# --- Client Mailboxes (Office 365 Shared Mailboxes) ---
+# ============================
+
+MAILBOX_DOMAIN = "clientes.tramilex.es"
+
+
+@api_router.post("/client-mailboxes")
+async def create_client_mailbox(body: dict = Body(...), user=Depends(require_admin)):
+    """Register a client mailbox. Attempts to create shared mailbox in Office 365."""
+    email_prefix = body.get("email_prefix", "").strip().lower()
+    client_id = body.get("client_id", "")
+    display_name = body.get("display_name", "")
+
+    if not email_prefix or not display_name:
+        raise HTTPException(status_code=400, detail="Prefijo de email y nombre son obligatorios")
+
+    # Sanitize prefix
+    import re
+    email_prefix = re.sub(r'[^a-z0-9._-]', '', email_prefix)
+    if not email_prefix:
+        raise HTTPException(status_code=400, detail="Prefijo de email invalido")
+
+    full_email = f"{email_prefix}@{MAILBOX_DOMAIN}"
+
+    # Check if already exists in our DB
+    existing = await db.client_mailboxes.find_one({"email": full_email})
+    if existing:
+        raise HTTPException(status_code=400, detail=f"El buzon {full_email} ya existe")
+
+    # Try to create shared mailbox in Office 365 via Graph API
+    ms_status = "pending"
+    ms_error = ""
+    token = get_ms_graph_token()
+    if token:
+        try:
+            import requests as req
+            # Create user with mailbox
+            create_url = "https://graph.microsoft.com/v1.0/users"
+            password = uuid.uuid4().hex[:16] + "A1!"
+            payload = {
+                "accountEnabled": False,
+                "displayName": display_name,
+                "mailNickname": email_prefix,
+                "userPrincipalName": full_email,
+                "passwordProfile": {
+                    "forceChangePasswordNextSignIn": False,
+                    "password": password
+                },
+                "usageLocation": "ES"
+            }
+            r = req.post(create_url, json=payload, headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, timeout=15)
+            if r.status_code in [200, 201]:
+                ms_status = "created"
+                logger.info(f"Shared mailbox created in Office 365: {full_email}")
+            else:
+                ms_status = "manual_required"
+                ms_error = r.text[:300]
+                logger.warning(f"Could not auto-create mailbox {full_email}: {r.status_code} {ms_error}")
+        except Exception as e:
+            ms_status = "manual_required"
+            ms_error = str(e)[:200]
+            logger.error(f"Error creating mailbox {full_email}: {e}")
+    else:
+        ms_status = "manual_required"
+        ms_error = "No se pudo obtener token de Microsoft Graph"
+
+    # Save in our DB
+    doc = {
+        "email": full_email,
+        "email_prefix": email_prefix,
+        "display_name": display_name,
+        "client_id": client_id if client_id else None,
+        "ms_status": ms_status,
+        "ms_error": ms_error,
+        "created_by": user["_id"],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "is_active": True,
+    }
+    result = await db.client_mailboxes.insert_one(doc)
+
+    # Get client name if linked
+    client_name = ""
+    if client_id:
+        client = await db.users.find_one({"_id": ObjectId(client_id), "role": "client"})
+        if client:
+            client_name = client.get("name", "")
+
+    return {
+        "id": str(result.inserted_id),
+        "email": full_email,
+        "display_name": display_name,
+        "client_name": client_name,
+        "ms_status": ms_status,
+        "ms_error": ms_error,
+        "message": f"Buzon {full_email} registrado" + (" (creado en Office 365)" if ms_status == "created" else " (crear manualmente en Office 365 Admin)")
+    }
+
+
+@api_router.get("/client-mailboxes")
+async def list_client_mailboxes(user=Depends(require_staff_or_admin)):
+    mailboxes = []
+    async for m in db.client_mailboxes.find({"is_active": True}).sort("created_at", -1):
+        client_name = ""
+        if m.get("client_id"):
+            try:
+                client = await db.users.find_one({"_id": ObjectId(m["client_id"])})
+                if client:
+                    client_name = client.get("name", "")
+            except Exception:
+                pass
+
+        # Get unread count from Graph API (cached briefly)
+        mailboxes.append({
+            "id": str(m["_id"]),
+            "email": m.get("email", ""),
+            "display_name": m.get("display_name", ""),
+            "client_id": m.get("client_id", ""),
+            "client_name": client_name,
+            "ms_status": m.get("ms_status", ""),
+            "created_at": m.get("created_at", ""),
+        })
+    return mailboxes
+
+
+@api_router.get("/client-mailboxes/{mailbox_id}/messages")
+async def get_mailbox_messages(mailbox_id: str, limit: int = 30, user=Depends(require_staff_or_admin)):
+    """Read emails from a client mailbox via Microsoft Graph API."""
+    try:
+        mb = await db.client_mailboxes.find_one({"_id": ObjectId(mailbox_id), "is_active": True})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Buzon no encontrado")
+    if not mb:
+        raise HTTPException(status_code=404, detail="Buzon no encontrado")
+
+    email = mb.get("email", "")
+    token = get_ms_graph_token()
+    if not token:
+        raise HTTPException(status_code=500, detail="Error conectando con Microsoft Graph")
+
+    import requests as req
+    try:
+        url = f"https://graph.microsoft.com/v1.0/users/{email}/messages?$top={limit}&$select=id,subject,from,receivedDateTime,hasAttachments,bodyPreview,isRead&$orderby=receivedDateTime desc"
+        r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+        if r.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"El buzon {email} no existe en Office 365. Crealo desde el Admin Center de Microsoft 365.")
+        if r.status_code != 200:
+            logger.error(f"Graph API mailbox error: {r.status_code} {r.text[:300]}")
+            raise HTTPException(status_code=500, detail="Error leyendo buzon de Office 365")
+
+        messages = []
+        for m in r.json().get("value", []):
+            from_info = m.get("from", {}).get("emailAddress", {})
+            messages.append({
+                "id": m.get("id", ""),
+                "subject": m.get("subject", "(Sin asunto)"),
+                "from_name": from_info.get("name", ""),
+                "from_email": from_info.get("address", ""),
+                "date": m.get("receivedDateTime", ""),
+                "preview": m.get("bodyPreview", ""),
+                "has_attachments": m.get("hasAttachments", False),
+                "is_read": m.get("isRead", False),
+            })
+        return {"email": email, "display_name": mb.get("display_name", ""), "messages": messages}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching mailbox {email}: {e}")
+        raise HTTPException(status_code=500, detail="Error leyendo buzon")
+
+
+@api_router.get("/client-mailboxes/{mailbox_id}/messages/{msg_id}")
+async def get_mailbox_message_detail(mailbox_id: str, msg_id: str, user=Depends(require_staff_or_admin)):
+    """Read a specific email with full body."""
+    try:
+        mb = await db.client_mailboxes.find_one({"_id": ObjectId(mailbox_id), "is_active": True})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Buzon no encontrado")
+    if not mb:
+        raise HTTPException(status_code=404, detail="Buzon no encontrado")
+
+    email = mb.get("email", "")
+    token = get_ms_graph_token()
+    if not token:
+        raise HTTPException(status_code=500, detail="Error conectando con Microsoft Graph")
+
+    import requests as req
+    try:
+        url = f"https://graph.microsoft.com/v1.0/users/{email}/messages/{msg_id}?$select=id,subject,from,toRecipients,receivedDateTime,body,hasAttachments"
+        r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+        if r.status_code != 200:
+            raise HTTPException(status_code=404, detail="Mensaje no encontrado")
+
+        m = r.json()
+        from_info = m.get("from", {}).get("emailAddress", {})
+        body_content = m.get("body", {}).get("content", "")
+        if len(body_content) > 5000:
+            body_content = body_content[:5000] + "..."
+
+        # Get attachments if any
+        attachments = []
+        if m.get("hasAttachments"):
+            att_url = f"https://graph.microsoft.com/v1.0/users/{email}/messages/{msg_id}/attachments?$select=id,name,contentType,size"
+            att_r = req.get(att_url, headers={"Authorization": f"Bearer {token}"}, timeout=10)
+            if att_r.status_code == 200:
+                for a in att_r.json().get("value", []):
+                    attachments.append({
+                        "id": a.get("id", ""),
+                        "filename": a.get("name", ""),
+                        "content_type": a.get("contentType", ""),
+                        "size": a.get("size", 0)
+                    })
+
+        # Mark as read
+        try:
+            req.patch(
+                f"https://graph.microsoft.com/v1.0/users/{email}/messages/{msg_id}",
+                json={"isRead": True},
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                timeout=5
+            )
+        except Exception:
+            pass
+
+        return {
+            "id": m.get("id", ""),
+            "subject": m.get("subject", "(Sin asunto)"),
+            "from_name": from_info.get("name", ""),
+            "from_email": from_info.get("address", ""),
+            "date": m.get("receivedDateTime", ""),
+            "body": body_content,
+            "body_type": m.get("body", {}).get("contentType", "text"),
+            "attachments": attachments,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching message: {e}")
+        raise HTTPException(status_code=500, detail="Error leyendo mensaje")
+
+
+@api_router.get("/client-mailboxes/{mailbox_id}/messages/{msg_id}/attachments/{att_id}")
+async def download_mailbox_attachment(mailbox_id: str, msg_id: str, att_id: str, user=Depends(require_staff_or_admin)):
+    """Download an attachment from a mailbox message."""
+    try:
+        mb = await db.client_mailboxes.find_one({"_id": ObjectId(mailbox_id), "is_active": True})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Buzon no encontrado")
+    if not mb:
+        raise HTTPException(status_code=404, detail="Buzon no encontrado")
+
+    email = mb.get("email", "")
+    token = get_ms_graph_token()
+    if not token:
+        raise HTTPException(status_code=500, detail="Error conectando con Microsoft Graph")
+
+    import requests as req
+    try:
+        url = f"https://graph.microsoft.com/v1.0/users/{email}/messages/{msg_id}/attachments/{att_id}"
+        r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=30)
+        if r.status_code != 200:
+            raise HTTPException(status_code=404, detail="Adjunto no encontrado")
+
+        att = r.json()
+        import base64
+        content = base64.b64decode(att.get("contentBytes", ""))
+        filename = att.get("name", "archivo")
+        ct = att.get("contentType", "application/octet-stream")
+
+        from urllib.parse import quote
+        return FastAPIResponse(
+            content=content,
+            media_type=ct,
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"}
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error downloading attachment: {e}")
+        raise HTTPException(status_code=500, detail="Error descargando adjunto")
+
+
+@api_router.delete("/client-mailboxes/{mailbox_id}")
+async def delete_client_mailbox(mailbox_id: str, user=Depends(require_admin)):
+    """Deactivate a client mailbox (does NOT delete from Office 365)."""
+    try:
+        result = await db.client_mailboxes.update_one(
+            {"_id": ObjectId(mailbox_id)},
+            {"$set": {"is_active": False}}
+        )
+    except Exception:
+        raise HTTPException(status_code=404, detail="Buzon no encontrado")
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Buzon no encontrado")
+    return {"message": "Buzon desactivado"}
+
+
+# ============================
 # --- Email Inbox (Microsoft Graph) ---
 # ============================
 
