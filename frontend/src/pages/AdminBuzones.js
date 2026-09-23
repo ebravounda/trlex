@@ -218,17 +218,19 @@ function MailboxInbox({ mailbox, onBack, onOpenDetail }) {
   const [selectedMsg, setSelectedMsg] = useState(null);
 
   useEffect(() => {
-    const fetch = async () => {
+    const fetchAndMark = async () => {
       setLoading(true);
       try {
         const res = await api.get(`/client-mailboxes/${mailbox.id}/messages`);
         setMessages(res.data.messages || []);
+        // Mark all as read when opening the mailbox
+        api.post(`/client-mailboxes/${mailbox.id}/mark-read`).catch(() => {});
       } catch (err) {
         toast.error(err.response?.data?.detail || 'Error cargando mensajes');
       }
       setLoading(false);
     };
-    fetch();
+    fetchAndMark();
   }, [mailbox.id]);
 
   if (selectedMsg) {

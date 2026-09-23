@@ -4413,6 +4413,43 @@ async def get_mailbox_messages(mailbox_id: str, limit: int = 30, user=Depends(re
         raise HTTPException(status_code=500, detail="Error leyendo buzon")
 
 
+@api_router.post("/client-mailboxes/{mailbox_id}/mark-read")
+async def mark_mailbox_read(mailbox_id: str, user=Depends(require_staff_or_admin)):
+    """Mark all unread messages in a mailbox as read."""
+    try:
+        mb = await db.client_mailboxes.find_one({"_id": ObjectId(mailbox_id), "is_active": True})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Buzon no encontrado")
+    if not mb:
+        raise HTTPException(status_code=404, detail="Buzon no encontrado")
+
+    email = mb.get("email", "")
+    token = get_ms_graph_token()
+    if not token:
+        return {"message": "ok"}
+
+    import requests as req
+    try:
+        # Get unread messages
+        url = f"https://graph.microsoft.com/v1.0/users/{email}/messages?$filter=isRead eq false&$select=id&$top=50"
+        r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=10)
+        if r.status_code == 200:
+            for m in r.json().get("value", []):
+                try:
+                    req.patch(
+                        f"https://graph.microsoft.com/v1.0/users/{email}/messages/{m['id']}",
+                        json={"isRead": True},
+                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                        timeout=5
+                    )
+                except Exception:
+                    pass
+    except Exception as e:
+        logger.error(f"Error marking mailbox read: {e}")
+
+    return {"message": "Mensajes marcados como leidos"}
+
+
 @api_router.get("/client-mailboxes/{mailbox_id}/messages/{msg_id}")
 async def get_mailbox_message_detail(mailbox_id: str, msg_id: str, user=Depends(require_staff_or_admin)):
     """Read a specific email with full body."""
