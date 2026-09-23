@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { toast } from 'sonner';
 import {
   Plus, Mail, MailOpen, Inbox, ArrowLeft, Paperclip, Download,
-  Trash2, User, Clock, Search, X, AlertCircle, CheckCircle2, ExternalLink
+  Trash2, User, Clock, Search, X, AlertCircle, CheckCircle2, ExternalLink, MailCheck
 } from 'lucide-react';
 
 const DOMAIN = 'clientes.tramilex.es';
@@ -331,6 +331,15 @@ export default function AdminBuzones() {
     } catch { toast.error('Error'); }
   };
 
+  const handleMarkRead = async (e, id) => {
+    e.stopPropagation();
+    try {
+      await api.post(`/client-mailboxes/${id}/mark-read`);
+      toast.success('Marcado como leido');
+      fetchMailboxes();
+    } catch { toast.error('Error'); }
+  };
+
   const filtered = mailboxes.filter(m =>
     !search.trim() ||
     m.email.toLowerCase().includes(search.toLowerCase()) ||
@@ -441,10 +450,19 @@ export default function AdminBuzones() {
               <p className="text-sm font-semibold text-slate-900 mb-0.5">{mb.display_name}</p>
               <p className="text-xs text-blue-600 font-mono mb-2">{mb.email}</p>
               {mb.unread_count > 0 && (
-                <p className="text-xs font-bold text-red-600 mb-2 flex items-center gap-1">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                  {mb.unread_count} correo{mb.unread_count > 1 ? 's' : ''} sin leer
-                </p>
+                <div className="mb-2">
+                  <p className="text-xs font-bold text-red-600 mb-1.5 flex items-center gap-1">
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    {mb.unread_count} correo{mb.unread_count > 1 ? 's' : ''} sin leer
+                  </p>
+                  <button
+                    onClick={e => handleMarkRead(e, mb.id)}
+                    className="flex items-center gap-1.5 text-[11px] font-semibold text-white bg-red-500 hover:bg-red-600 px-3 py-1.5 rounded-lg transition-colors shadow-sm"
+                    data-testid={`mark-read-${mb.id}`}
+                  >
+                    <MailCheck className="w-3.5 h-3.5" /> Marcar como leido
+                  </button>
+                </div>
               )}
               {mb.client_name && (
                 <div className="flex items-center gap-1.5 text-xs text-slate-500">
