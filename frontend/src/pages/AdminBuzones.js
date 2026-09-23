@@ -390,6 +390,14 @@ export default function AdminBuzones() {
         </div>
       </div>
 
+      {/* Notice */}
+      <div className="bg-amber-50 border border-amber-200/60 rounded-xl px-4 py-3 flex items-start gap-3">
+        <Clock className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+        <p className="text-xs text-amber-700">
+          <strong>Nota:</strong> Una vez creado el buzon, esperar entre 5 y 15 minutos para recibir correos con normalidad. Deberia ser inmediato, pero se recomienda esperar para la correcta sincronizacion de los sistemas de Tramilex.
+        </p>
+      </div>
+
       {/* Search */}
       {mailboxes.length > 0 && (
         <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-4 py-1 shadow-sm">
