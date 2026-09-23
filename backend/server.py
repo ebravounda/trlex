@@ -4324,24 +4324,23 @@ async def list_client_mailboxes(user=Depends(require_staff_or_admin)):
         # Get unread count — compare with local last_read_at
         unread_count = 0
         if token and m.get("ms_status") == "created":
+            email = m.get("email", "")
+            last_read = m.get("last_read_at", "")
             try:
-                email = m.get("email", "")
-                last_read = m.get("last_read_at", "")
                 if last_read:
                     # Count messages received after last_read_at
-                    filter_str = f"receivedDateTime gt {last_read}"
-                    url = f"https://graph.microsoft.com/v1.0/users/{email}/messages?$filter={filter_str}&$select=id&$top=50&$count=true"
-                    r = req.get(url, headers={"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"}, timeout=8)
+                    url = f"https://graph.microsoft.com/v1.0/users/{email}/messages?$filter=receivedDateTime ge {last_read}&$select=id&$top=50"
+                    r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=8)
                     if r.status_code == 200:
                         unread_count = len(r.json().get("value", []))
                 else:
                     # No last_read — use Office 365 unread count
-                    url = f"https://graph.microsoft.com/v1.0/users/{email}/mailFolders/inbox?$select=unreadItemCount"
+                    url = f"https://graph.microsoft.com/v1.0/users/{email}/mailFolders/inbox?$select=unreadItemCount,totalItemCount"
                     r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=8)
                     if r.status_code == 200:
-                        unread_count = r.json().get("unreadItemCount", 0)
-            except Exception:
-                pass
+                        unread_count = r.json().get("totalItemCount", 0)
+            except Exception as e:
+                logger.error(f"Error getting unread count for {email}: {e}")
 
         mailboxes.append({
             "id": str(m["_id"]),
@@ -4370,16 +4369,15 @@ async def get_mailboxes_unread_total(user=Depends(require_staff_or_admin)):
         last_read = mb.get("last_read_at", "")
         try:
             if last_read:
-                filter_str = f"receivedDateTime gt {last_read}"
-                url = f"https://graph.microsoft.com/v1.0/users/{email}/messages?$filter={filter_str}&$select=id&$top=50"
-                r = req.get(url, headers={"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"}, timeout=8)
+                url = f"https://graph.microsoft.com/v1.0/users/{email}/messages?$filter=receivedDateTime ge {last_read}&$select=id&$top=50"
+                r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=8)
                 if r.status_code == 200:
                     total_unread += len(r.json().get("value", []))
             else:
-                url = f"https://graph.microsoft.com/v1.0/users/{email}/mailFolders/inbox?$select=unreadItemCount"
+                url = f"https://graph.microsoft.com/v1.0/users/{email}/mailFolders/inbox?$select=totalItemCount"
                 r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=8)
                 if r.status_code == 200:
-                    total_unread += r.json().get("unreadItemCount", 0)
+                    total_unread += r.json().get("totalItemCount", 0)
         except Exception:
             pass
     return {"count": total_unread}
@@ -4442,9 +4440,11 @@ async def mark_mailbox_read(mailbox_id: str, user=Depends(require_staff_or_admin
         raise HTTPException(status_code=404, detail="Buzon no encontrado")
 
     # Save timestamp locally — any email before this time is considered "read"
+    # Use Z format for Graph API compatibility
+    now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     await db.client_mailboxes.update_one(
         {"_id": ObjectId(mailbox_id)},
-        {"$set": {"last_read_at": datetime.now(timezone.utc).isoformat()}}
+        {"$set": {"last_read_at": now_utc}}
     )
 
     # Also try to mark in Office 365 (best effort)
