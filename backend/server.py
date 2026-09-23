@@ -4321,15 +4321,25 @@ async def list_client_mailboxes(user=Depends(require_staff_or_admin)):
             except Exception:
                 pass
 
-        # Get unread count per mailbox
+        # Get unread count — compare with local last_read_at
         unread_count = 0
         if token and m.get("ms_status") == "created":
             try:
                 email = m.get("email", "")
-                url = f"https://graph.microsoft.com/v1.0/users/{email}/mailFolders/inbox?$select=unreadItemCount"
-                r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=8)
-                if r.status_code == 200:
-                    unread_count = r.json().get("unreadItemCount", 0)
+                last_read = m.get("last_read_at", "")
+                if last_read:
+                    # Count messages received after last_read_at
+                    filter_str = f"receivedDateTime gt {last_read}"
+                    url = f"https://graph.microsoft.com/v1.0/users/{email}/messages?$filter={filter_str}&$select=id&$top=50&$count=true"
+                    r = req.get(url, headers={"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"}, timeout=8)
+                    if r.status_code == 200:
+                        unread_count = len(r.json().get("value", []))
+                else:
+                    # No last_read — use Office 365 unread count
+                    url = f"https://graph.microsoft.com/v1.0/users/{email}/mailFolders/inbox?$select=unreadItemCount"
+                    r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=8)
+                    if r.status_code == 200:
+                        unread_count = r.json().get("unreadItemCount", 0)
             except Exception:
                 pass
 
@@ -4357,11 +4367,19 @@ async def get_mailboxes_unread_total(user=Depends(require_staff_or_admin)):
     total_unread = 0
     async for mb in db.client_mailboxes.find({"is_active": True, "ms_status": "created"}):
         email = mb.get("email", "")
+        last_read = mb.get("last_read_at", "")
         try:
-            url = f"https://graph.microsoft.com/v1.0/users/{email}/mailFolders/inbox?$select=unreadItemCount"
-            r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=8)
-            if r.status_code == 200:
-                total_unread += r.json().get("unreadItemCount", 0)
+            if last_read:
+                filter_str = f"receivedDateTime gt {last_read}"
+                url = f"https://graph.microsoft.com/v1.0/users/{email}/messages?$filter={filter_str}&$select=id&$top=50"
+                r = req.get(url, headers={"Authorization": f"Bearer {token}", "ConsistencyLevel": "eventual"}, timeout=8)
+                if r.status_code == 200:
+                    total_unread += len(r.json().get("value", []))
+            else:
+                url = f"https://graph.microsoft.com/v1.0/users/{email}/mailFolders/inbox?$select=unreadItemCount"
+                r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=8)
+                if r.status_code == 200:
+                    total_unread += r.json().get("unreadItemCount", 0)
         except Exception:
             pass
     return {"count": total_unread}
@@ -4415,7 +4433,7 @@ async def get_mailbox_messages(mailbox_id: str, limit: int = 30, user=Depends(re
 
 @api_router.post("/client-mailboxes/{mailbox_id}/mark-read")
 async def mark_mailbox_read(mailbox_id: str, user=Depends(require_staff_or_admin)):
-    """Mark all unread messages in a mailbox as read."""
+    """Mark a mailbox as read locally + attempt in Office 365."""
     try:
         mb = await db.client_mailboxes.find_one({"_id": ObjectId(mailbox_id), "is_active": True})
     except Exception:
@@ -4423,29 +4441,33 @@ async def mark_mailbox_read(mailbox_id: str, user=Depends(require_staff_or_admin
     if not mb:
         raise HTTPException(status_code=404, detail="Buzon no encontrado")
 
+    # Save timestamp locally — any email before this time is considered "read"
+    await db.client_mailboxes.update_one(
+        {"_id": ObjectId(mailbox_id)},
+        {"$set": {"last_read_at": datetime.now(timezone.utc).isoformat()}}
+    )
+
+    # Also try to mark in Office 365 (best effort)
     email = mb.get("email", "")
     token = get_ms_graph_token()
-    if not token:
-        return {"message": "ok"}
-
-    import requests as req
-    try:
-        # Get unread messages
-        url = f"https://graph.microsoft.com/v1.0/users/{email}/messages?$filter=isRead eq false&$select=id&$top=50"
-        r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=10)
-        if r.status_code == 200:
-            for m in r.json().get("value", []):
-                try:
-                    req.patch(
-                        f"https://graph.microsoft.com/v1.0/users/{email}/messages/{m['id']}",
-                        json={"isRead": True},
-                        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-                        timeout=5
-                    )
-                except Exception:
-                    pass
-    except Exception as e:
-        logger.error(f"Error marking mailbox read: {e}")
+    if token:
+        import requests as req
+        try:
+            url = f"https://graph.microsoft.com/v1.0/users/{email}/messages?$filter=isRead eq false&$select=id&$top=50"
+            r = req.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=10)
+            if r.status_code == 200:
+                for m in r.json().get("value", []):
+                    try:
+                        req.patch(
+                            f"https://graph.microsoft.com/v1.0/users/{email}/messages/{m['id']}",
+                            json={"isRead": True},
+                            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+                            timeout=5
+                        )
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"Error marking mailbox read in O365: {e}")
 
     return {"message": "Mensajes marcados como leidos"}
 
