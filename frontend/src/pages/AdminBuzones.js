@@ -335,8 +335,9 @@ export default function AdminBuzones() {
     e.stopPropagation();
     try {
       await api.post(`/client-mailboxes/${id}/mark-read`);
+      // Update local state immediately (don't wait for Graph API to propagate)
+      setMailboxes(prev => prev.map(m => m.id === id ? { ...m, unread_count: 0 } : m));
       toast.success('Marcado como leido');
-      fetchMailboxes();
     } catch { toast.error('Error'); }
   };
 
@@ -350,7 +351,11 @@ export default function AdminBuzones() {
   if (selectedMailbox) {
     return (
       <div className="space-y-6" data-testid="admin-buzones">
-        <MailboxInbox mailbox={selectedMailbox} onBack={() => { setSelectedMailbox(null); fetchMailboxes(); }} />
+        <MailboxInbox mailbox={selectedMailbox} onBack={() => {
+          // Clear unread locally for this mailbox
+          setMailboxes(prev => prev.map(m => m.id === selectedMailbox.id ? { ...m, unread_count: 0 } : m));
+          setSelectedMailbox(null);
+        }} />
       </div>
     );
   }
