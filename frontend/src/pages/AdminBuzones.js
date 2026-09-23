@@ -341,7 +341,7 @@ export default function AdminBuzones() {
   if (selectedMailbox) {
     return (
       <div className="space-y-6" data-testid="admin-buzones">
-        <MailboxInbox mailbox={selectedMailbox} onBack={() => setSelectedMailbox(null)} />
+        <MailboxInbox mailbox={selectedMailbox} onBack={() => { setSelectedMailbox(null); fetchMailboxes(); }} />
       </div>
     );
   }
