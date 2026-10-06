@@ -6,11 +6,15 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { toast } from 'sonner';
-import { UserPlus, Users, Trash2, Plus, Pencil, Phone, MessageCircle } from 'lucide-react';
+import { UserPlus, Users, Trash2, Plus, Pencil, Phone, MessageCircle, Send } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
 
 export default function AdminStaff() {
   const [staff, setStaff] = useState([]);
   const [showCreate, setShowCreate] = useState(false);
+  const [showBroadcast, setShowBroadcast] = useState(false);
+  const [broadcastMsg, setBroadcastMsg] = useState('');
+  const [sending, setSending] = useState(false);
   const [editingStaff, setEditingStaff] = useState(null);
   const [form, setForm] = useState({ name: '', email: '', password: '', phone: '', whatsapp: '', position: '' });
   const [editForm, setEditForm] = useState({ name: '', phone: '', whatsapp: '', position: '' });
@@ -61,6 +65,20 @@ export default function AdminStaff() {
     } catch (err) { toast.error(err.response?.data?.detail || 'Error'); }
   };
 
+  const handleBroadcast = async () => {
+    if (!broadcastMsg.trim()) { toast.error('Escribe un mensaje'); return; }
+    setSending(true);
+    try {
+      const res = await api.post('/whatsapp/broadcast', { message: broadcastMsg });
+      toast.success(res.data.message);
+      setBroadcastMsg('');
+      setShowBroadcast(false);
+    } catch (err) { toast.error(err.response?.data?.detail || 'Error enviando'); }
+    setSending(false);
+  };
+
+  const staffWithWa = staff.filter(s => s.whatsapp);
+
   return (
     <div className="space-y-6" data-testid="admin-staff">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -68,9 +86,14 @@ export default function AdminStaff() {
           <h1 className="text-2xl font-bold text-slate-900" style={{ fontFamily: 'Manrope, sans-serif' }}>Equipo</h1>
           <p className="text-sm text-slate-500 mt-1">Gestiona los usuarios del despacho</p>
         </div>
-        <Button onClick={() => setShowCreate(true)} className="bg-slate-900 hover:bg-slate-800 gap-2" data-testid="create-staff-btn">
-          <Plus className="w-4 h-4" /> Nuevo usuario
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => setShowBroadcast(true)} variant="outline" className="gap-2 border-green-200 text-green-700 hover:bg-green-50" data-testid="broadcast-wa-btn">
+            <MessageCircle className="w-4 h-4" /> WhatsApp a todos
+          </Button>
+          <Button onClick={() => setShowCreate(true)} className="bg-slate-900 hover:bg-slate-800 gap-2" data-testid="create-staff-btn">
+            <Plus className="w-4 h-4" /> Nuevo usuario
+          </Button>
+        </div>
       </div>
 
       <div className="bg-white border border-slate-200 rounded-lg p-5 flex items-center gap-4">
@@ -183,6 +206,51 @@ export default function AdminStaff() {
             <p className="text-[10px] text-slate-400">Codigo de pais sin + (ej: 34612345678). Al crear tareas, se enviara WhatsApp automaticamente.</p>
             <Button onClick={handleSaveEdit} className="w-full bg-slate-900 hover:bg-slate-800" data-testid="save-staff-btn">
               Guardar cambios
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Broadcast WhatsApp Dialog */}
+      <Dialog open={showBroadcast} onOpenChange={setShowBroadcast}>
+        <DialogContent className="max-w-md" data-testid="broadcast-dialog">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircle className="w-5 h-5 text-green-600" /> WhatsApp a todo el equipo
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+              <p className="text-xs text-green-700">
+                Se enviara a <strong>{staffWithWa.length} persona(s)</strong> con WhatsApp configurado.
+                Cada mensaje tendra variaciones automaticas para evitar baneos.
+              </p>
+            </div>
+            {staffWithWa.length === 0 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <p className="text-xs text-amber-700">
+                  Ningun miembro tiene WhatsApp configurado. Edita cada usuario y agrega su numero.
+                </p>
+              </div>
+            )}
+            <div>
+              <label className="text-xs font-medium text-slate-600 mb-1.5 block">Mensaje</label>
+              <Textarea
+                placeholder="Escribe el mensaje que recibiran todos..."
+                value={broadcastMsg}
+                onChange={e => setBroadcastMsg(e.target.value)}
+                rows={4}
+                className="bg-white"
+                data-testid="broadcast-message"
+              />
+            </div>
+            <Button
+              onClick={handleBroadcast}
+              disabled={sending || staffWithWa.length === 0}
+              className="w-full h-11 bg-green-600 hover:bg-green-700 rounded-xl font-medium gap-2"
+              data-testid="send-broadcast-btn"
+            >
+              <Send className="w-4 h-4" /> {sending ? 'Enviando...' : `Enviar a ${staffWithWa.length} persona(s)`}
             </Button>
           </div>
         </DialogContent>

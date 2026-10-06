@@ -4090,6 +4090,70 @@ def send_reminder_whatsapp(phone_number, name, title, priority, days, expediente
     )
     return send_whatsapp(phone_number, message)
 
+
+# Broadcast templates — each one varies greeting, structure, and closing
+BROADCAST_WA_TEMPLATES = [
+    "Hola {name},\n\n{message}\n\nSaludos,\nEquipo Tramilex",
+    "Buenos dias {name},\n\n{message}\n\nAtentamente,\nTramilex",
+    "Estimado/a {name},\n\n{message}\n\nUn saludo,\nEquipo Tramilex",
+    "{name}, te informamos:\n\n{message}\n\nGracias,\nTramilex",
+    "Hola {name}, esperamos que estes bien.\n\n{message}\n\nCualquier duda estamos a tu disposicion.\nTramilex",
+    "Buen dia {name},\n\n{message}\n\nQuedamos atentos.\nEquipo Tramilex",
+    "{name},\n\nTe compartimos lo siguiente:\n\n{message}\n\nSaludos cordiales,\nTramilex",
+    "Hola {name}, te escribimos desde Tramilex.\n\n{message}\n\nGracias por tu atencion.",
+]
+
+
+@api_router.post("/whatsapp/broadcast")
+async def broadcast_whatsapp(body: dict = Body(...), background_tasks: BackgroundTasks = None, user=Depends(require_staff_or_admin)):
+    """Send a WhatsApp message to all staff members with variations."""
+    message = body.get("message", "").strip()
+    if not message:
+        raise HTTPException(status_code=400, detail="El mensaje es obligatorio")
+
+    # Get all staff/admin users with whatsapp
+    recipients = []
+    async for u in db.users.find({"role": {"$in": ["staff", "admin"]}, "whatsapp": {"$exists": True, "$ne": ""}}):
+        recipients.append({
+            "name": u.get("name", ""),
+            "whatsapp": u.get("whatsapp", ""),
+        })
+
+    if not recipients:
+        raise HTTPException(status_code=400, detail="No hay miembros del equipo con WhatsApp configurado")
+
+    # Send with variations in background
+    sent = 0
+    failed = 0
+    used_templates = list(BROADCAST_WA_TEMPLATES)
+    random.shuffle(used_templates)
+
+    for i, r in enumerate(recipients):
+        # Pick a different template for each person (cycle if more people than templates)
+        template = used_templates[i % len(used_templates)]
+        varied_message = template.format(name=r["name"], message=message)
+
+        # Add small random delay variation and slight text variation
+        variations = ["", " ", ".", " ."]
+        varied_message += random.choice(variations)
+
+        success = send_whatsapp(r["whatsapp"], varied_message)
+        if success:
+            sent += 1
+        else:
+            failed += 1
+
+        # Small delay between messages to avoid rate limits
+        import time
+        time.sleep(random.uniform(1.5, 3.5))
+
+    return {
+        "message": f"WhatsApp enviado a {sent} persona(s)" + (f", {failed} fallido(s)" if failed > 0 else ""),
+        "sent": sent,
+        "failed": failed,
+        "total": len(recipients)
+    }
+
 async def check_task_reminders():
     """Check for upcoming task deadlines and send reminders."""
     try:
