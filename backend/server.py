@@ -365,12 +365,14 @@ class StaffCreateInput(BaseModel):
     email: str
     password: str
     phone: str = ""
+    whatsapp: str = ""
     position: str = ""
 
 
 class StaffUpdateInput(BaseModel):
     name: str = ""
     phone: str = ""
+    whatsapp: str = ""
     position: str = ""
 
 
@@ -3361,6 +3363,7 @@ async def create_staff(body: StaffCreateInput, background_tasks: BackgroundTasks
         "password_hash": hash_password(body.password),
         "name": body.name.strip(),
         "phone": body.phone.strip(),
+        "whatsapp": body.whatsapp.strip(),
         "position": body.position.strip(),
         "role": "staff",
         "must_change_password": True,
@@ -3386,6 +3389,7 @@ async def list_staff(user=Depends(require_staff_or_admin)):
             "name": u.get("name", ""),
             "email": u.get("email", ""),
             "phone": u.get("phone", ""),
+            "whatsapp": u.get("whatsapp", ""),
             "position": u.get("position", ""),
             "created_at": u.get("created_at", "")
         })
@@ -3396,6 +3400,7 @@ async def list_staff(user=Depends(require_staff_or_admin)):
             "name": u.get("name", ""),
             "email": u.get("email", ""),
             "phone": u.get("phone", ""),
+            "whatsapp": u.get("whatsapp", ""),
             "position": "Administrador",
             "created_at": u.get("created_at", "")
         })
@@ -3412,6 +3417,24 @@ async def delete_staff(staff_id: str, user=Depends(require_admin)):
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     await log_audit("staff_deleted", user["_id"], user.get("name", ""), {"staff_id": staff_id})
     return {"message": "Usuario eliminado"}
+
+
+@api_router.put("/staff/{staff_id}")
+async def update_staff(staff_id: str, body: StaffUpdateInput, user=Depends(require_admin)):
+    update_fields = {}
+    if body.name: update_fields["name"] = body.name.strip()
+    if body.phone is not None: update_fields["phone"] = body.phone.strip()
+    if body.whatsapp is not None: update_fields["whatsapp"] = body.whatsapp.strip()
+    if body.position is not None: update_fields["position"] = body.position.strip()
+    if not update_fields:
+        raise HTTPException(status_code=400, detail="No hay campos para actualizar")
+    try:
+        result = await db.users.update_one({"_id": ObjectId(staff_id), "role": "staff"}, {"$set": update_fields})
+    except Exception:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    if result.matched_count == 0:
+        raise HTTPException(status_code=404, detail="Usuario no encontrado")
+    return {"message": "Usuario actualizado"}
 
 
 # ============================
@@ -3470,6 +3493,15 @@ async def create_task(body: TaskCreateInput, background_tasks: BackgroundTasks, 
         background_tasks.add_task(
             send_task_email, assigned_email, assigned.get("name", ""),
             body.title.strip(), user.get("name", ""), body.priority, body.description
+        )
+
+    # Send WhatsApp notification
+    assigned_whatsapp = assigned.get("whatsapp", "")
+    if assigned_whatsapp:
+        background_tasks.add_task(
+            send_task_whatsapp, assigned_whatsapp, assigned.get("name", ""),
+            body.title.strip(), body.priority, body.due_date,
+            body.numero_expediente.strip() if body.numero_expediente else ""
         )
 
     await log_audit("task_created", user["_id"], user.get("name", ""),
@@ -3972,6 +4004,92 @@ async def delete_task_audio(task_id: str, audio_id: str, user=Depends(require_st
 REMINDER_DAYS = [5, 3, 2, 1]
 REMINDER_EXTRA_EMAIL = "kortiz@tramilex.es"
 
+# ============================
+# --- WhatsApp (MiTiendaPro) ---
+# ============================
+
+MITIENDAPRO_API_KEY = os.environ.get("MITIENDAPRO_API_KEY", "")
+MITIENDAPRO_INSTANCE = os.environ.get("MITIENDAPRO_INSTANCE", "")
+
+# Message templates with variations to avoid Meta bans
+TASK_WA_TEMPLATES = [
+    "Hola {name}, se te ha asignado una nueva tarea en Tramilex:\n\n*{title}*\nPrioridad: {priority}\nFecha limite: {due_date}\n{expediente}Accede a la plataforma para ver los detalles.",
+    "Buenos dias {name}, tienes una tarea nueva asignada:\n\n*{title}*\n- Prioridad: {priority}\n- Vence: {due_date}\n{expediente}Revisa los detalles en tramilex.goroky.es",
+    "Hola {name}, te informamos que se creo una tarea para ti:\n\n*{title}*\nNivel: {priority} | Limite: {due_date}\n{expediente}Consulta la plataforma para mas informacion.",
+    "{name}, nueva asignacion de tarea:\n\n*{title}*\nPrioridad: {priority}\nPlazo: {due_date}\n{expediente}Ingresa a Tramilex para revisarla.",
+    "Estimado/a {name},\n\nSe te asigno la siguiente tarea:\n*{title}*\n\nPrioridad: {priority}\nFecha de entrega: {due_date}\n{expediente}Por favor revisala en la plataforma.",
+]
+
+REMINDER_WA_TEMPLATES = [
+    "Hola {name}, recordatorio: la tarea *{title}* vence en {days} dia(s).\nPrioridad: {priority}\n{expediente}Revisa el estado en Tramilex.",
+    "{name}, te recordamos que la tarea *{title}* tiene plazo en {days} dia(s).\nNivel: {priority}\n{expediente}Accede a la plataforma.",
+    "Aviso {name}: quedan {days} dia(s) para la tarea *{title}*.\nPrioridad: {priority}\n{expediente}Verifica el progreso en tramilex.goroky.es",
+    "Recordatorio para {name}: *{title}* vence pronto ({days} dias).\nPrioridad: {priority}\n{expediente}Consulta Tramilex para detalles.",
+    "Hola {name}, faltan {days} dia(s) para el vencimiento de *{title}*.\n{priority} prioridad.\n{expediente}Ingresa a Tramilex para actualizar el estado.",
+]
+
+
+def send_whatsapp(phone_number, message):
+    """Send WhatsApp message via MiTiendaPro API."""
+    if not MITIENDAPRO_API_KEY or not MITIENDAPRO_INSTANCE or not phone_number:
+        return False
+    import requests as req
+    try:
+        # Clean phone number - remove spaces, dashes, plus sign
+        clean_number = phone_number.strip().replace(" ", "").replace("-", "").replace("+", "")
+        if not clean_number:
+            return False
+
+        r = req.post(
+            "https://mitiendapro.com/api/v1/send",
+            headers={
+                "Authorization": f"Bearer {MITIENDAPRO_API_KEY}",
+                "Content-Type": "application/json"
+            },
+            json={
+                "instanceName": MITIENDAPRO_INSTANCE,
+                "number": clean_number,
+                "type": "text",
+                "message": message
+            },
+            timeout=15
+        )
+        logger.info(f"WhatsApp sent to {clean_number}: {r.status_code}")
+        return r.status_code in [200, 201]
+    except Exception as e:
+        logger.error(f"Error sending WhatsApp to {phone_number}: {e}")
+        return False
+
+
+def send_task_whatsapp(phone_number, name, title, priority, due_date, expediente=""):
+    """Send task assignment WhatsApp with random template variation."""
+    exp_line = f"Expediente: {expediente}\n" if expediente else ""
+    priority_map = {"alta": "Alta", "media": "Media", "baja": "Baja"}
+    template = random.choice(TASK_WA_TEMPLATES)
+    message = template.format(
+        name=name,
+        title=title,
+        priority=priority_map.get(priority, priority),
+        due_date=due_date or "Sin fecha",
+        expediente=exp_line
+    )
+    return send_whatsapp(phone_number, message)
+
+
+def send_reminder_whatsapp(phone_number, name, title, priority, days, expediente=""):
+    """Send task reminder WhatsApp with random template variation."""
+    exp_line = f"Expediente: {expediente}\n" if expediente else ""
+    priority_map = {"alta": "Alta", "media": "Media", "baja": "Baja"}
+    template = random.choice(REMINDER_WA_TEMPLATES)
+    message = template.format(
+        name=name,
+        title=title,
+        priority=priority_map.get(priority, priority),
+        days=days,
+        expediente=exp_line
+    )
+    return send_whatsapp(phone_number, message)
+
 async def check_task_reminders():
     """Check for upcoming task deadlines and send reminders."""
     try:
@@ -4070,6 +4188,18 @@ async def check_task_reminders():
                             logger.error(f"Error enviando recordatorio a {r['email']}: {e}")
 
                 logger.info(f"Recordatorio enviado: tarea '{task_title}' vence en {days_before} dias")
+
+                # Send WhatsApp reminder to assigned user
+                if assigned_to:
+                    try:
+                        assigned_user_wa = await db.users.find_one({"_id": ObjectId(assigned_to)})
+                        if assigned_user_wa and assigned_user_wa.get("whatsapp"):
+                            send_reminder_whatsapp(
+                                assigned_user_wa["whatsapp"], assigned_name,
+                                task_title, priority, days_before, numero_exp
+                            )
+                    except Exception as e:
+                        logger.error(f"Error enviando WhatsApp recordatorio: {e}")
 
     except Exception as e:
         logger.error(f"Error en check_task_reminders: {e}")
