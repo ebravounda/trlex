@@ -3429,7 +3429,7 @@ async def update_staff(staff_id: str, body: StaffUpdateInput, user=Depends(requi
     if not update_fields:
         raise HTTPException(status_code=400, detail="No hay campos para actualizar")
     try:
-        result = await db.users.update_one({"_id": ObjectId(staff_id), "role": "staff"}, {"$set": update_fields})
+        result = await db.users.update_one({"_id": ObjectId(staff_id), "role": {"$in": ["staff", "admin"]}}, {"$set": update_fields})
     except Exception:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
     if result.matched_count == 0:

@@ -150,15 +150,13 @@ export default function AdminStaff() {
                   </TableCell>
                   <TableCell className="py-3 px-4 text-right">
                     <div className="flex items-center justify-end gap-1">
+                      <Button variant="ghost" size="sm" onClick={() => handleEdit(s)} data-testid={`edit-staff-${s.id}`}>
+                        <Pencil className="w-4 h-4 text-slate-400" />
+                      </Button>
                       {s.position !== 'Administrador' && (
-                        <>
-                          <Button variant="ghost" size="sm" onClick={() => handleEdit(s)} data-testid={`edit-staff-${s.id}`}>
-                            <Pencil className="w-4 h-4 text-slate-400" />
-                          </Button>
-                          <Button variant="ghost" size="sm" onClick={() => handleDelete(s.id, s.name)}>
-                            <Trash2 className="w-4 h-4 text-red-500" />
-                          </Button>
-                        </>
+                        <Button variant="ghost" size="sm" onClick={() => handleDelete(s.id, s.name)}>
+                          <Trash2 className="w-4 h-4 text-red-500" />
+                        </Button>
                       )}
                     </div>
                   </TableCell>
